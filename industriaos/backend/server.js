@@ -187,15 +187,13 @@ app.post('/api/pedidos', authMiddleware, (req, res) => {
 
 // Avançar etapa
 app.post('/api/pedidos/:id/avancar', authMiddleware, (req, res) => {
-  const { observacao } = req.body;
+  const { observacao, fila, precisa_solvente, precisa_uv } = req.body;
   const pedido = db.prepare('SELECT * FROM pedidos WHERE id = ?').get(req.params.id);
   if (!pedido) return res.status(404).json({ erro: 'Pedido não encontrado' });
 
   if (!podeOperarEtapa(req.user, pedido.etapa_atual, db)) {
     return res.status(403).json({ erro: 'Sem permissão para operar esta etapa' });
   }
-
-  const { observacao, fila, precisa_solvente, precisa_uv } = req.body;
 
   // Designer define impressora na etapa Arte (4)
   if (pedido.etapa_atual === 4 && (precisa_solvente !== undefined || precisa_uv !== undefined)) {
