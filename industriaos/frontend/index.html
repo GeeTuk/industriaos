@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IndustriaOS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400;500&family=Instrument+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/main.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Login -->
+    <div id="login-screen" class="login-screen">
+      <div class="login-card">
+        <div class="login-logo">
+          <span class="logo-mark">⬡</span>
+          <div>
+            <div class="logo-text">IndustriaOS</div>
+            <div class="logo-sub">GESTÃO DE PRODUÇÃO</div>
+          </div>
+        </div>
+        <div class="login-form">
+          <div class="form-group">
+            <label>E-MAIL</label>
+            <input type="email" id="login-email" placeholder="seu@email.com" autocomplete="username">
+          </div>
+          <div class="form-group">
+            <label>SENHA</label>
+            <input type="password" id="login-senha" placeholder="••••••••" autocomplete="current-password">
+          </div>
+          <div id="login-erro" class="login-erro" style="display:none"></div>
+          <button class="btn btn-primary btn-full" id="login-btn" onclick="fazerLogin()">Entrar</button>
+        </div>
+        <div class="login-hint">
+          <span>Admin: admin@industriaos.com / admin123</span>
+        </div>
+      </div>
+      <div class="login-bg">
+        <div class="login-bg-text">INDUSTRIA<br>OS</div>
+      </div>
+    </div>
+
+    <!-- App Shell -->
+    <div id="app-shell" style="display:none">
+      <aside class="sidebar" id="sidebar">
+        <div class="sidebar-top">
+          <div class="logo">
+            <span class="logo-mark">⬡</span>
+            <div>
+              <div class="logo-text">IndustriaOS</div>
+              <div class="logo-sub">GESTÃO</div>
+            </div>
+          </div>
+        </div>
+
+        <nav class="nav" id="nav-menu">
+          <!-- gerado por JS -->
+        </nav>
+
+        <div class="sidebar-bottom">
+          <div class="user-card" id="user-card">
+            <div class="avatar" id="user-avatar">?</div>
+            <div class="user-info">
+              <div class="user-name" id="user-nome">–</div>
+              <div class="user-role" id="user-perfil">–</div>
+            </div>
+            <button class="logout-btn" onclick="logout()" title="Sair">⏏</button>
+          </div>
+        </div>
+      </aside>
+
+      <div class="main">
+        <div class="topbar">
+          <div class="topbar-left">
+            <button class="menu-toggle" onclick="toggleSidebar()">☰</button>
+            <h1 class="page-title" id="page-title">Dashboard</h1>
+          </div>
+          <div class="topbar-right" id="topbar-actions"></div>
+        </div>
+
+        <div class="content" id="content">
+          <!-- páginas renderizadas aqui -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast-container" id="toasts"></div>
+  <div class="modal-overlay" id="modal-overlay" onclick="fecharModal(event)">
+    <div class="modal" id="modal-box">
+      <div class="modal-header">
+        <div class="modal-title" id="modal-title"></div>
+        <button class="close-btn" onclick="fecharModalForce()">✕</button>
+      </div>
+      <div class="modal-body" id="modal-body"></div>
+      <div class="modal-footer" id="modal-footer"></div>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/app.js"></script>
+  <script src="/js/pages/dashboard.js"></script>
+  <script src="/js/pages/pedidos.js"></script>
+  <script src="/js/pages/clientes.js"></script>
+  <script src="/js/pages/usuarios.js"></script>
+</body>
+</html>
