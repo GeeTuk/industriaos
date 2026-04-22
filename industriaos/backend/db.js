@@ -125,6 +125,7 @@ function initDb() {
       { nome: 'João Impressão', email: 'impressao@industriaos.com', perfil: 'impressao', setor: 'Impressão' },
       { nome: 'Pedro Corte', email: 'corte@industriaos.com', perfil: 'corte', setor: 'Corte' },
       { nome: 'Maria Costura', email: 'costura@industriaos.com', perfil: 'costura', setor: 'Costura' },
+      { nome: 'Roberto Motor', email: 'motor@industriaos.com', perfil: 'motor', setor: 'Montagem' },
       { nome: 'Lucas Expedição', email: 'expedicao@industriaos.com', perfil: 'expedicao', setor: 'Expedição' },
       { nome: 'Gerente Geral', email: 'gerente@industriaos.com', perfil: 'gerente_geral', setor: 'Gerência' },
     ];

@@ -4,9 +4,8 @@ let currentPage = null;
 let etapasMap = {};
 
 const ETAPAS_NOMES = {
-  1: 'Contato', 2: 'Cadastro', 3: 'Orçamento', 4: 'Aprovação',
-  5: 'Arte', 6: 'Moldes', 7: 'Impressão', 8: 'Corte',
-  9: 'Costura', 10: 'Motor', 11: 'Expedição'
+  1: 'Contato', 2: 'Layout', 3: 'Aprovação', 4: 'Arte',
+  5: 'Impressão', 6: 'Corte', 7: 'Costura', 8: 'Motor', 9: 'Expedição'
 };
 const TIPO_LABELS = { INF: 'Inflável', LON: 'Lona', ADH: 'Adesivo', PLC: 'Placa', BAQ: 'Balão AR' };
 const PERFIL_LABELS = {

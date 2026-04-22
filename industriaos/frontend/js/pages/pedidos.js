@@ -96,25 +96,26 @@ function renderTabelaPedidos(pedidos) {
 async function abrirFichaPedido(id) {
   try {
     const pedido = await api.pedidos.get(id);
-    const canOperar = currentUser.etapasVisiveis?.includes(pedido.etapa_atual) || ['admin','gerente_geral'].includes(currentUser.perfil);
+    const canOperar = currentUser.etapasOperar?.includes(pedido.etapa_atual) || ['admin','gerente_geral'].includes(currentUser.perfil);
     const isAdmin = ['admin','gerente_geral'].includes(currentUser.perfil);
+    const showValor = ['admin','gerente_geral','vendedor'].includes(currentUser.perfil);
 
     // Etapas que o tipo de produto pula
-    const etapasAtivas = [1,2,3,4,5,6,7,8,9];
-    if (['INF','BAQ'].includes(pedido.tipo)) etapasAtivas.push(10);
-    etapasAtivas.push(11);
+    const etapasAtivas = [1,2,3,4,5,6,7];
+    if (['INF','BAQ'].includes(pedido.tipo)) etapasAtivas.push(8);
+    etapasAtivas.push(9);
 
-    const progressBar = Array.from({length: 11}, (_,i) => {
+    const progressBar = Array.from({length: 9}, (_,i) => {
       const e = i + 1;
       const done = pedido.etapa_atual > e;
       const curr = pedido.etapa_atual === e;
       const skip = !etapasAtivas.includes(e);
-      return `<div class="etapa-dot ${skip ? 'skip' : done ? 'done' : curr ? 'current' : ''}" title="Etapa ${e}: ${ETAPAS_NOMES[e]}"></div>`;
+      return `<div class="etapa-dot ${skip ? 'skip' : done ? 'done' : curr ? 'current' : ''}" title="${ETAPAS_NOMES[e]}"></div>`;
     }).join('');
 
-    // Impressão paralela
+    // Impressão paralela (etapa 5)
     let impressaoStatus = '';
-    if (pedido.etapa_atual === 7 || (pedido.precisa_solvente || pedido.precisa_uv)) {
+    if (pedido.etapa_atual === 5 || (pedido.precisa_solvente || pedido.precisa_uv)) {
       const solv = pedido.precisa_solvente ? (pedido.impressao_solvente_ok ? '✓ Solvente' : '⏳ Solvente') : '';
       const uv = pedido.precisa_uv ? (pedido.impressao_uv_ok ? '✓ UV' : '⏳ UV') : '';
       if (solv || uv) {
@@ -128,26 +129,47 @@ async function abrirFichaPedido(id) {
     // Ações disponíveis
     let acoes = '';
     if (canOperar && pedido.status === 'ativo') {
-      if (pedido.etapa_atual < 11) {
-        // Ações especiais para impressão
-        if (pedido.etapa_atual === 7 && pedido.precisa_solvente && pedido.precisa_uv) {
+      if (pedido.etapa_atual < 9) {
+        // Impressão com filas paralelas (etapa 5)
+        if (pedido.etapa_atual === 5 && pedido.precisa_solvente && pedido.precisa_uv) {
           acoes += `<button class="btn btn-success btn-sm" onclick="avancarImpressao(${pedido.id}, 'solvente')">✓ Solvente Pronta</button>`;
           acoes += `<button class="btn btn-success btn-sm" onclick="avancarImpressao(${pedido.id}, 'uv')">✓ UV Pronta</button>`;
         } else {
-          acoes += `<button class="btn btn-success btn-sm" onclick="modalAvancar(${pedido.id})">→ Avançar Etapa</button>`;
+          acoes += `<button class="btn btn-success btn-sm" onclick="modalAvancar(${pedido.id}, ${pedido.etapa_atual})">→ Avançar Etapa</button>`;
         }
         acoes += `<button class="btn btn-orange btn-sm" onclick="modalDevolver(${pedido.id}, ${pedido.etapa_atual})">↩ Devolver</button>`;
       } else {
-        acoes += `<button class="btn btn-success btn-sm" onclick="modalAvancar(${pedido.id})">✓ Concluir (Expedir)</button>`;
+        acoes += `<button class="btn btn-success btn-sm" onclick="modalAvancar(${pedido.id}, ${pedido.etapa_atual})">✓ Concluir (Expedir)</button>`;
       }
     }
     if (isAdmin) {
       acoes += `<button class="btn btn-ghost btn-sm" onclick="modalEditarPedido(${pedido.id})">✎ Editar</button>`;
     }
 
-    // Arquivos
-    const arquivosHtml = pedido.arquivos?.length
-      ? pedido.arquivos.map(a => {
+    // Capa: primeira imagem da etapa Aprovação (3)
+    const capaArquivo = pedido.arquivos?.find(a => a.etapa === 3 && /\.(jpg|jpeg|png|gif|webp)$/i.test(a.nome));
+
+    // Obs destaque: última movimentação
+    const ultimaMovimentacao = pedido.historico?.[0];
+    const obsDestaque = (ultimaMovimentacao && ['avanco','devolucao'].includes(ultimaMovimentacao.tipo)) ? `
+      <div class="obs-destaque ${ultimaMovimentacao.tipo === 'devolucao' ? 'obs-devolucao' : 'obs-avanco'}">
+        <div class="obs-destaque-icon">${ultimaMovimentacao.tipo === 'devolucao' ? '↩' : '→'}</div>
+        <div class="obs-destaque-body">
+          <div class="obs-destaque-text">${ultimaMovimentacao.descricao}</div>
+          <div class="obs-destaque-meta">${formatDate(ultimaMovimentacao.criado_em)}</div>
+        </div>
+      </div>` : '';
+
+    // Filtrar arquivos por visibilidade
+    const arquivosVisiveis = (pedido.arquivos || []).filter(a => {
+      if (isAdmin) return true;
+      if (a.etapa === 3) return true; // capa/aprovação: todos veem
+      if (a.etapa === 4) return currentUser.etapasVisiveis?.includes(5); // arte: só impressão vê
+      return currentUser.etapasVisiveis?.includes(a.etapa);
+    });
+
+    const arquivosHtml = arquivosVisiveis.length
+      ? arquivosVisiveis.map(a => {
           const isImg = /\.(jpg|jpeg|png|gif|webp)$/i.test(a.nome);
           return `
             <div class="arquivo-item">
@@ -158,7 +180,7 @@ async function abrirFichaPedido(id) {
               </div>
             </div>`;
         }).join('')
-      : `<div style="color:var(--text3);font-size:13px;padding:4px 0">Nenhum arquivo anexado</div>`;
+      : `<div style="color:var(--text3);font-size:13px;padding:4px 0">Nenhum arquivo disponível</div>`;
 
     // Histórico
     const timeline = pedido.historico?.map(h => {
@@ -175,6 +197,13 @@ async function abrirFichaPedido(id) {
     }).join('') || '<div style="padding:12px;color:var(--text3);font-size:13px">Sem histórico</div>';
 
     const body = `
+      ${capaArquivo ? `<div class="pedido-capa" onclick="window.open('${api.arquivos.url(capaArquivo.id)}')">
+        <img src="${api.arquivos.url(capaArquivo.id)}" alt="Layout Aprovado">
+        <div class="capa-label">Layout Aprovado — clique para ampliar</div>
+      </div>` : ''}
+
+      ${obsDestaque}
+
       <div class="pedido-header">
         <div>
           <div class="pedido-codigo">${pedido.codigo}</div>
@@ -197,7 +226,7 @@ async function abrirFichaPedido(id) {
         <div class="info-item"><div class="info-label">Cliente</div><div class="info-value">${pedido.cliente_nome || '—'}</div></div>
         <div class="info-item"><div class="info-label">Vendedor</div><div class="info-value">${pedido.vendedor_nome || '—'}</div></div>
         <div class="info-item"><div class="info-label">Prazo</div><div class="info-value">${formatDateShort(pedido.prazo) || '—'}</div></div>
-        <div class="info-item"><div class="info-label">Orçamento</div><div class="info-value">${formatMoney(pedido.valor_orcamento)}</div></div>
+        ${showValor ? `<div class="info-item"><div class="info-label">Orçamento</div><div class="info-value">${formatMoney(pedido.valor_orcamento)}</div></div>` : ''}
       </div>
 
       <div class="info-row">
@@ -259,24 +288,37 @@ async function avancarImpressao(id, fila) {
   } catch (e) { toast(e.message, 'error'); }
 }
 
-function modalAvancar(id) {
+function modalAvancar(id, etapaAtual) {
+  const isArte = etapaAtual === 4;
   const body = `
+    ${isArte ? `<div class="form-group">
+      <label>Tipo de Impressão *</label>
+      <div style="display:flex;gap:20px;margin-top:8px">
+        <label class="checkbox-row"><input type="checkbox" id="imp-solvente"> Solvente</label>
+        <label class="checkbox-row"><input type="checkbox" id="imp-uv"> UV</label>
+      </div>
+    </div>` : ''}
     <div class="form-group">
-      <label>Observação (opcional)</label>
-      <textarea id="obs-avancar" placeholder="Adicione uma observação sobre esta etapa..."></textarea>
+      <label>Observação ${isArte ? '(opcional)' : '(opcional)'}</label>
+      <textarea id="obs-avancar" placeholder="Adicione uma observação para a próxima etapa..."></textarea>
     </div>
   `;
   const footer = `
     <button class="btn btn-ghost" onclick="fecharModalForce()">Cancelar</button>
-    <button class="btn btn-success" onclick="confirmarAvancar(${id})">→ Confirmar Avanço</button>
+    <button class="btn btn-success" onclick="confirmarAvancar(${id}, ${etapaAtual})">→ Confirmar Avanço</button>
   `;
   abrirModal('Avançar Etapa', body, footer);
 }
 
-async function confirmarAvancar(id) {
+async function confirmarAvancar(id, etapaAtual) {
   const obs = document.getElementById('obs-avancar')?.value;
+  const dados = { observacao: obs };
+  if (etapaAtual === 4) {
+    dados.precisa_solvente = document.getElementById('imp-solvente')?.checked;
+    dados.precisa_uv = document.getElementById('imp-uv')?.checked;
+  }
   try {
-    const res = await api.pedidos.avancar(id, { observacao: obs });
+    const res = await api.pedidos.avancar(id, dados);
     toast(res.mensagem, 'success');
     fecharModalForce();
     carregarPedidos();
@@ -374,12 +416,6 @@ async function modalNovoPedido() {
         <label>Valor do Orçamento (R$)</label>
         <input type="number" id="np-valor" placeholder="0,00" step="0.01">
       </div>
-      <div class="form-group" style="justify-content:flex-end;padding-top:20px">
-        <div style="display:flex;flex-direction:column;gap:8px">
-          <label class="checkbox-row"><input type="checkbox" id="np-solvente"> Precisa Impressão Solvente</label>
-          <label class="checkbox-row"><input type="checkbox" id="np-uv"> Precisa Impressão UV</label>
-        </div>
-      </div>
     </div>
   `;
   const footer = `
@@ -399,8 +435,6 @@ async function confirmarNovoPedido() {
     cores: document.getElementById('np-cores').value,
     prazo: document.getElementById('np-prazo').value,
     valor_orcamento: document.getElementById('np-valor').value || null,
-    precisa_solvente: document.getElementById('np-solvente').checked,
-    precisa_uv: document.getElementById('np-uv').checked,
   };
   if (!dados.descricao) { toast('Preencha a descrição', 'error'); return; }
   try {

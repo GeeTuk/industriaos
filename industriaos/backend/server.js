@@ -32,17 +32,15 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, '..', 'frontend')));
 
 const ETAPAS = {
-  1:  { nome: 'Contato do Cliente', setor: 'Comercial' },
-  2:  { nome: 'Cadastro do Cliente', setor: 'Comercial' },
-  3:  { nome: 'Orçamento e Layout', setor: 'Comercial' },
-  4:  { nome: 'Aprovação do Orçamento', setor: 'Comercial' },
-  5:  { nome: 'Desenvolvimento de Arte', setor: 'Arte' },
-  6:  { nome: 'Criação de Moldes', setor: 'Moldes' },
-  7:  { nome: 'Impressão', setor: 'Impressão' },
-  8:  { nome: 'Corte', setor: 'Corte' },
-  9:  { nome: 'Costura', setor: 'Costura' },
-  10: { nome: 'Montagem do Motor', setor: 'Montagem' },
-  11: { nome: 'Embalagem e Expedição', setor: 'Expedição' },
+  1: { nome: 'Contato',   setor: 'Comercial' },
+  2: { nome: 'Layout',    setor: 'Arte' },
+  3: { nome: 'Aprovação', setor: 'Comercial' },
+  4: { nome: 'Arte',      setor: 'Arte' },
+  5: { nome: 'Impressão', setor: 'Impressão' },
+  6: { nome: 'Corte',     setor: 'Corte' },
+  7: { nome: 'Costura',   setor: 'Costura' },
+  8: { nome: 'Motor',     setor: 'Montagem' },
+  9: { nome: 'Expedição', setor: 'Expedição' },
 };
 
 // ── AUTH ──────────────────────────────────────────────────────────
@@ -68,7 +66,7 @@ app.get('/api/auth/me', authMiddleware, (req, res) => {
   if (!user) return res.status(404).json({ erro: 'Usuário não encontrado' });
 
   const etapasVisiveis = [], etapasOperar = [], etapasDevolver = [];
-  for (let e = 1; e <= 11; e++) {
+  for (let e = 1; e <= 9; e++) {
     if (podeVerEtapa(req.user, e, db)) etapasVisiveis.push(e);
     if (podeOperarEtapa(req.user, e, db)) etapasOperar.push(e);
     if (podeDevolverEtapa(req.user, e, db)) etapasDevolver.push(e);
@@ -123,7 +121,7 @@ app.get('/api/pedidos', authMiddleware, (req, res) => {
   // Filtro por etapas visíveis
   if (!['admin', 'gerente_geral'].includes(req.user.perfil)) {
     const etapasVisiveis = [];
-    for (let e = 1; e <= 11; e++) {
+    for (let e = 1; e <= 9; e++) {
       if (podeVerEtapa(req.user, e, db)) etapasVisiveis.push(e);
     }
     if (etapasVisiveis.length === 0) return res.json([]);
@@ -197,21 +195,28 @@ app.post('/api/pedidos/:id/avancar', authMiddleware, (req, res) => {
     return res.status(403).json({ erro: 'Sem permissão para operar esta etapa' });
   }
 
-  // Lógica especial: impressão precisa das duas filas concluídas
-  if (pedido.etapa_atual === 7) {
-    if (pedido.precisa_solvente && pedido.precisa_uv) {
-      // Verifica qual fila o operador está marcando
-      const { fila } = req.body; // 'solvente' ou 'uv'
+  const { observacao, fila, precisa_solvente, precisa_uv } = req.body;
+
+  // Designer define impressora na etapa Arte (4)
+  if (pedido.etapa_atual === 4 && (precisa_solvente !== undefined || precisa_uv !== undefined)) {
+    db.prepare('UPDATE pedidos SET precisa_solvente = ?, precisa_uv = ? WHERE id = ?')
+      .run(precisa_solvente ? 1 : 0, precisa_uv ? 1 : 0, pedido.id);
+  }
+
+  // Impressão: duas filas (solvente e UV)
+  if (pedido.etapa_atual === 5) {
+    const p = db.prepare('SELECT * FROM pedidos WHERE id = ?').get(pedido.id);
+    if (p.precisa_solvente && p.precisa_uv) {
       if (fila === 'solvente') {
         db.prepare('UPDATE pedidos SET impressao_solvente_ok = 1, atualizado_em = CURRENT_TIMESTAMP WHERE id = ?').run(pedido.id);
-        db.prepare('INSERT INTO historico (pedido_id, user_id, tipo, etapa_de, etapa_para, descricao) VALUES (?, ?, ?, ?, ?, ?)').run(pedido.id, req.user.id, 'parcial', 7, 7, `Impressão Solvente concluída por ${req.user.nome}`);
-        const atualizado = db.prepare('SELECT * FROM pedidos WHERE id = ?').get(pedido.id);
-        if (!atualizado.impressao_uv_ok) return res.json({ mensagem: 'Impressão Solvente registrada. Aguardando UV.' });
+        db.prepare('INSERT INTO historico (pedido_id, user_id, tipo, etapa_de, etapa_para, descricao) VALUES (?, ?, ?, ?, ?, ?)').run(pedido.id, req.user.id, 'parcial', 5, 5, `Impressão Solvente concluída por ${req.user.nome}`);
+        const atual = db.prepare('SELECT * FROM pedidos WHERE id = ?').get(pedido.id);
+        if (!atual.impressao_uv_ok) return res.json({ mensagem: 'Solvente registrada. Aguardando UV.' });
       } else if (fila === 'uv') {
         db.prepare('UPDATE pedidos SET impressao_uv_ok = 1, atualizado_em = CURRENT_TIMESTAMP WHERE id = ?').run(pedido.id);
-        db.prepare('INSERT INTO historico (pedido_id, user_id, tipo, etapa_de, etapa_para, descricao) VALUES (?, ?, ?, ?, ?, ?)').run(pedido.id, req.user.id, 'parcial', 7, 7, `Impressão UV concluída por ${req.user.nome}`);
-        const atualizado = db.prepare('SELECT * FROM pedidos WHERE id = ?').get(pedido.id);
-        if (!atualizado.impressao_solvente_ok) return res.json({ mensagem: 'Impressão UV registrada. Aguardando Solvente.' });
+        db.prepare('INSERT INTO historico (pedido_id, user_id, tipo, etapa_de, etapa_para, descricao) VALUES (?, ?, ?, ?, ?, ?)').run(pedido.id, req.user.id, 'parcial', 5, 5, `Impressão UV concluída por ${req.user.nome}`);
+        const atual = db.prepare('SELECT * FROM pedidos WHERE id = ?').get(pedido.id);
+        if (!atual.impressao_solvente_ok) return res.json({ mensagem: 'UV registrada. Aguardando Solvente.' });
       }
     }
   }
@@ -219,9 +224,9 @@ app.post('/api/pedidos/:id/avancar', authMiddleware, (req, res) => {
   // Calcular próxima etapa
   let proximaEtapa = pedido.etapa_atual + 1;
 
-  // Pula etapa 10 (motor) para tipos que não precisam
-  if (proximaEtapa === 10 && !['INF', 'BAQ'].includes(pedido.tipo)) {
-    proximaEtapa = 11;
+  // Pula Motor (8) para tipos que não precisam
+  if (proximaEtapa === 8 && !['INF', 'BAQ'].includes(pedido.tipo)) {
+    proximaEtapa = 9;
   }
 
   db.prepare('UPDATE pedidos SET etapa_atual = ?, atualizado_em = CURRENT_TIMESTAMP WHERE id = ?').run(proximaEtapa, pedido.id);
@@ -274,7 +279,7 @@ app.put('/api/pedidos/:id', authMiddleware, (req, res) => {
 // ── DASHBOARD / MÉTRICAS ──────────────────────────────────────────
 app.get('/api/dashboard', authMiddleware, (req, res) => {
   const porEtapa = [];
-  for (let e = 1; e <= 11; e++) {
+  for (let e = 1; e <= 9; e++) {
     if (!podeVerEtapa(req.user, e, db)) continue;
     const count = db.prepare(`SELECT COUNT(*) as c FROM pedidos WHERE etapa_atual = ? AND status = 'ativo'`).get(e);
     porEtapa.push({ etapa: e, nome: ETAPAS[e]?.nome, total: count.c });
