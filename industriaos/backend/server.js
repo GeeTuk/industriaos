@@ -261,7 +261,7 @@ app.get('/api/dashboard', authMiddleware, (req, res) => {
   const porEtapa = [];
   for (let e = 1; e <= 11; e++) {
     if (!podeVerEtapa(req.user, e, db)) continue;
-    const count = db.prepare('SELECT COUNT(*) as c FROM pedidos WHERE etapa_atual = ? AND status = "ativo"').get(e);
+    const count = db.prepare(`SELECT COUNT(*) as c FROM pedidos WHERE etapa_atual = ? AND status = 'ativo'`).get(e);
     porEtapa.push({ etapa: e, nome: ETAPAS[e]?.nome, total: count.c });
   }
 
@@ -271,8 +271,8 @@ app.get('/api/dashboard', authMiddleware, (req, res) => {
     WHERE p.status = 'ativo' ORDER BY p.atualizado_em DESC LIMIT 8
   `).all();
 
-  const totalAtivos = db.prepare('SELECT COUNT(*) as c FROM pedidos WHERE status = "ativo"').get().c;
-  const totalClientes = db.prepare('SELECT COUNT(*) as c FROM clientes WHERE status = "ativo"').get().c;
+  const totalAtivos = db.prepare(`SELECT COUNT(*) as c FROM pedidos WHERE status = 'ativo'`).get().c;
+  const totalClientes = db.prepare(`SELECT COUNT(*) as c FROM clientes WHERE status = 'ativo'`).get().c;
   const totalUsuarios = db.prepare('SELECT COUNT(*) as c FROM users WHERE ativo = 1').get().c;
 
   res.json({ porEtapa, recentes, totalAtivos, totalClientes, totalUsuarios, etapas: ETAPAS });
