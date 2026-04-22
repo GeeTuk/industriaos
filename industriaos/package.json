@@ -3,9 +3,11 @@
   "version": "1.0.0",
   "description": "IndustriaOS - Sistema de Gestão de Produção",
   "main": "backend/server.js",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
-    "start": "node backend/server.js",
-    "build": "cd backend && npm install"
+    "start": "node backend/server.js"
   },
   "dependencies": {
     "express": "^4.18.2",
