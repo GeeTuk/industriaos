@@ -41,7 +41,7 @@ app.post('/api/auth/login', (req, res) => {
 
   if (!bcrypt.compareSync(senha, user.senha_hash)) return res.status(401).json({ erro: 'Senha incorreta' });
 
-  db.prepare('UPDATE users SET ultimo_acesso = datetime("now") WHERE id = ?').run(user.id);
+  db.prepare('UPDATE users SET ultimo_acesso = datetime('now') WHERE id = ?').run(user.id);
   db.prepare('INSERT INTO auditoria (user_id, acao, detalhes) VALUES (?, ?, ?)').run(user.id, 'login', `Login: ${email}`);
 
   const token = jwt.sign({ id: user.id, nome: user.nome, email: user.email, perfil: user.perfil, setor: user.setor }, JWT_SECRET, { expiresIn: '12h' });
@@ -188,12 +188,12 @@ app.post('/api/pedidos/:id/avancar', authMiddleware, (req, res) => {
       // Verifica qual fila o operador está marcando
       const { fila } = req.body; // 'solvente' ou 'uv'
       if (fila === 'solvente') {
-        db.prepare('UPDATE pedidos SET impressao_solvente_ok = 1, atualizado_em = datetime("now") WHERE id = ?').run(pedido.id);
+        db.prepare('UPDATE pedidos SET impressao_solvente_ok = 1, atualizado_em = datetime('now') WHERE id = ?').run(pedido.id);
         db.prepare('INSERT INTO historico (pedido_id, user_id, tipo, etapa_de, etapa_para, descricao) VALUES (?, ?, ?, ?, ?, ?)').run(pedido.id, req.user.id, 'parcial', 7, 7, `Impressão Solvente concluída por ${req.user.nome}`);
         const atualizado = db.prepare('SELECT * FROM pedidos WHERE id = ?').get(pedido.id);
         if (!atualizado.impressao_uv_ok) return res.json({ mensagem: 'Impressão Solvente registrada. Aguardando UV.' });
       } else if (fila === 'uv') {
-        db.prepare('UPDATE pedidos SET impressao_uv_ok = 1, atualizado_em = datetime("now") WHERE id = ?').run(pedido.id);
+        db.prepare('UPDATE pedidos SET impressao_uv_ok = 1, atualizado_em = datetime('now') WHERE id = ?').run(pedido.id);
         db.prepare('INSERT INTO historico (pedido_id, user_id, tipo, etapa_de, etapa_para, descricao) VALUES (?, ?, ?, ?, ?, ?)').run(pedido.id, req.user.id, 'parcial', 7, 7, `Impressão UV concluída por ${req.user.nome}`);
         const atualizado = db.prepare('SELECT * FROM pedidos WHERE id = ?').get(pedido.id);
         if (!atualizado.impressao_solvente_ok) return res.json({ mensagem: 'Impressão UV registrada. Aguardando Solvente.' });
@@ -209,7 +209,7 @@ app.post('/api/pedidos/:id/avancar', authMiddleware, (req, res) => {
     proximaEtapa = 11;
   }
 
-  db.prepare('UPDATE pedidos SET etapa_atual = ?, atualizado_em = datetime("now") WHERE id = ?').run(proximaEtapa, pedido.id);
+  db.prepare('UPDATE pedidos SET etapa_atual = ?, atualizado_em = datetime('now') WHERE id = ?').run(proximaEtapa, pedido.id);
   db.prepare('INSERT INTO historico (pedido_id, user_id, tipo, etapa_de, etapa_para, descricao) VALUES (?, ?, ?, ?, ?, ?)').run(
     pedido.id, req.user.id, 'avanco',
     pedido.etapa_atual, proximaEtapa,
@@ -232,7 +232,7 @@ app.post('/api/pedidos/:id/devolver', authMiddleware, (req, res) => {
   }
 
   const etapaDe = pedido.etapa_atual;
-  db.prepare('UPDATE pedidos SET etapa_atual = ?, atualizado_em = datetime("now") WHERE id = ?').run(etapa_destino, pedido.id);
+  db.prepare('UPDATE pedidos SET etapa_atual = ?, atualizado_em = datetime('now') WHERE id = ?').run(etapa_destino, pedido.id);
   db.prepare('INSERT INTO historico (pedido_id, user_id, tipo, etapa_de, etapa_para, descricao) VALUES (?, ?, ?, ?, ?, ?)').run(
     pedido.id, req.user.id, 'devolucao', etapaDe, etapa_destino,
     `DEVOLVIDO de "${ETAPAS[etapaDe]?.nome}" para "${ETAPAS[etapa_destino]?.nome}" — Motivo: ${motivo} — por ${req.user.nome}`
