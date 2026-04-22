@@ -198,33 +198,42 @@ async function abrirFichaPedido(id) {
 
     const body = `
       ${capaArquivo
-        ? `<div class="pedido-capa" onclick="window.open('${api.arquivos.url(capaArquivo.id)}')">
-            <img src="${api.arquivos.url(capaArquivo.id)}" alt="Layout Aprovado">
-            <div class="capa-label">Layout Aprovado — clique para ampliar</div>
+        ? `<div class="pedido-hero" style="background-image:url('${api.arquivos.url(capaArquivo.id)}')">
+            <div class="pedido-hero-overlay">
+              <div class="pedido-hero-info">
+                <div class="pedido-codigo" style="font-size:20px">${pedido.codigo}</div>
+                <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+                  ${tagTipo(pedido.tipo)}
+                  ${tagEtapa(pedido.etapa_atual)}
+                  ${tagStatus(pedido.status)}
+                </div>
+              </div>
+              <div class="pedido-actions">${acoes}</div>
+            </div>
+            <button class="capa-ampliar-btn" onclick="window.open('${api.arquivos.url(capaArquivo.id)}')" title="Ampliar imagem">⤢</button>
           </div>`
-        : (pedido.etapa_atual === 3 && canOperar)
-          ? `<label class="capa-upload-area">
-              <div class="capa-upload-icon">🖼</div>
-              <div class="capa-upload-text">Clique para enviar o Layout / Capa do Pedido</div>
-              <div class="capa-upload-sub">JPG, PNG — esta imagem ficará visível para todas as etapas</div>
-              <input type="file" hidden accept="image/*" onchange="uploadArquivo(${pedido.id}, this)">
-            </label>`
-          : ''
+        : `<div class="pedido-header">
+            <div>
+              <div class="pedido-codigo">${pedido.codigo}</div>
+              <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+                ${tagTipo(pedido.tipo)}
+                ${tagEtapa(pedido.etapa_atual)}
+                ${tagStatus(pedido.status)}
+              </div>
+            </div>
+            <div class="pedido-actions">${acoes}</div>
+          </div>
+          ${pedido.etapa_atual === 3 && canOperar
+            ? `<label class="capa-upload-area">
+                <div class="capa-upload-icon">🖼</div>
+                <div class="capa-upload-text">Clique para enviar o Layout / Capa do Pedido</div>
+                <div class="capa-upload-sub">JPG, PNG — ficará visível para todas as etapas</div>
+                <input type="file" hidden accept="image/*" onchange="uploadArquivo(${pedido.id}, this)">
+              </label>`
+            : ''}`
       }
 
       ${obsDestaque}
-
-      <div class="pedido-header">
-        <div>
-          <div class="pedido-codigo">${pedido.codigo}</div>
-          <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
-            ${tagTipo(pedido.tipo)}
-            ${tagEtapa(pedido.etapa_atual)}
-            ${tagStatus(pedido.status)}
-          </div>
-        </div>
-        <div class="pedido-actions">${acoes}</div>
-      </div>
 
       <div style="margin-bottom:16px">
         <div class="section-label">Progresso</div>
