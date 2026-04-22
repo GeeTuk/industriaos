@@ -197,10 +197,20 @@ async function abrirFichaPedido(id) {
     }).join('') || '<div style="padding:12px;color:var(--text3);font-size:13px">Sem histórico</div>';
 
     const body = `
-      ${capaArquivo ? `<div class="pedido-capa" onclick="window.open('${api.arquivos.url(capaArquivo.id)}')">
-        <img src="${api.arquivos.url(capaArquivo.id)}" alt="Layout Aprovado">
-        <div class="capa-label">Layout Aprovado — clique para ampliar</div>
-      </div>` : ''}
+      ${capaArquivo
+        ? `<div class="pedido-capa" onclick="window.open('${api.arquivos.url(capaArquivo.id)}')">
+            <img src="${api.arquivos.url(capaArquivo.id)}" alt="Layout Aprovado">
+            <div class="capa-label">Layout Aprovado — clique para ampliar</div>
+          </div>`
+        : (pedido.etapa_atual === 3 && canOperar)
+          ? `<label class="capa-upload-area">
+              <div class="capa-upload-icon">🖼</div>
+              <div class="capa-upload-text">Clique para enviar o Layout / Capa do Pedido</div>
+              <div class="capa-upload-sub">JPG, PNG — esta imagem ficará visível para todas as etapas</div>
+              <input type="file" hidden accept="image/*" onchange="uploadArquivo(${pedido.id}, this)">
+            </label>`
+          : ''
+      }
 
       ${obsDestaque}
 
