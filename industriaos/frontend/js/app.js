@@ -216,45 +216,78 @@ function formatMoney(v) {
   return Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
-// Fila page (simple inline render)
+// Fila page com abas por etapa
 async function renderFila() {
   try {
-    const etapasVisiveis = currentUser.etapasVisiveis || [];
-    if (etapasVisiveis.length === 0) {
+    const etapasOperar = currentUser.etapasOperar || currentUser.etapasVisiveis || [];
+    if (etapasOperar.length === 0) {
       document.getElementById('content').innerHTML = '<div class="empty-state"><div class="empty-icon">🔒</div><div class="empty-text">Sem etapas configuradas para seu perfil.<br>Fale com o administrador.</div></div>';
       return;
     }
 
     const pedidos = await api.pedidos.listar();
-    const meusPedidos = pedidos.filter(p => etapasVisiveis.includes(p.etapa_atual));
+    window._filaPedidos = pedidos;
 
-    let rows = meusPedidos.map(p => `
-      <tr onclick="abrirFichaPedido(${p.id})">
-        <td><span style="font-family:var(--font-mono);font-size:12px">${p.codigo}</span></td>
-        <td>${tagTipo(p.tipo)}</td>
-        <td>${p.cliente_nome || '—'}</td>
-        <td>${p.descricao?.substring(0, 50) || '—'}</td>
-        <td>${tagEtapa(p.etapa_atual)}</td>
-        <td>${formatDateShort(p.prazo) || '—'}</td>
-      </tr>
-    `).join('');
-
-    document.getElementById('content').innerHTML = `
-      <div style="margin-bottom:16px">
-        <div style="font-size:13px;color:var(--text2)">${meusPedidos.length} pedido(s) na(s) sua(s) etapa(s): ${etapasVisiveis.map(e => ETAPAS_NOMES[e]).join(', ')}</div>
-      </div>
-      <div class="card">
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Código</th><th>Tipo</th><th>Cliente</th><th>Descrição</th><th>Etapa</th><th>Prazo</th></tr></thead>
-            <tbody>${rows || '<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">✓</div><div class="empty-text">Nenhum pedido na sua fila agora</div></div></td></tr>'}</tbody>
-          </table>
-        </div>
-      </div>
-    `;
+    const activeTab = etapasOperar[0];
+    _renderFilaTabs(etapasOperar, pedidos, activeTab);
   } catch (e) {
     document.getElementById('content').innerHTML = `<div class="empty-state"><div class="empty-text">Erro: ${e.message}</div></div>`;
   }
+}
+
+function _renderFilaTabs(etapasOperar, pedidos, activeTab) {
+  const tabs = etapasOperar.map(e => {
+    const count = pedidos.filter(p => p.etapa_atual === e).length;
+    return `<button class="tab-btn ${e === activeTab ? 'active' : ''}" onclick="filaSetTab(${e})">
+      ${ETAPAS_NOMES[e]}
+      <span class="tab-badge">${count}</span>
+    </button>`;
+  }).join('');
+
+  document.getElementById('content').innerHTML = `
+    <div class="tabs-nav">${tabs}</div>
+    <div id="fila-tab-content"></div>
+  `;
+  _renderFilaCards(pedidos, activeTab);
+}
+
+function filaSetTab(etapa) {
+  document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    if (btn.textContent.includes(ETAPAS_NOMES[etapa])) btn.classList.add('active');
+  });
+  _renderFilaCards(window._filaPedidos || [], etapa);
+}
+
+function _renderFilaCards(pedidos, etapa) {
+  const lista = pedidos.filter(p => p.etapa_atual === etapa);
+  if (lista.length === 0) {
+    document.getElementById('fila-tab-content').innerHTML = `
+      <div class="empty-state" style="margin-top:32px">
+        <div class="empty-icon">✓</div>
+        <div class="empty-text">Nenhum pedido em <strong>${ETAPAS_NOMES[etapa]}</strong> agora</div>
+      </div>`;
+    return;
+  }
+
+  const cards = lista.map(p => `
+    <div class="fila-card" onclick="abrirFichaPedido(${p.id})">
+      <div class="fila-card-header">
+        <span class="fila-codigo">${p.codigo}</span>
+        ${tagTipo(p.tipo)}
+      </div>
+      <div class="fila-card-body">
+        <div class="fila-cliente">${p.cliente_nome || 'Sem cliente'}</div>
+        <div class="fila-desc">${p.descricao?.substring(0, 90) || '—'}</div>
+      </div>
+      <div class="fila-card-footer">
+        <span>${p.prazo ? 'Prazo: ' + formatDateShort(p.prazo) : ''}</span>
+        <span>${formatDate(p.atualizado_em)}</span>
+      </div>
+    </div>
+  `).join('');
+
+  document.getElementById('fila-tab-content').innerHTML = `<div class="cards-grid">${cards}</div>`;
 }
 
 // Auditoria

@@ -339,3 +339,102 @@ tbody td { padding: 11px 14px; font-size: 13px; }
   .content { padding: 14px; }
   .topbar { padding: 0 14px; }
 }
+
+/* ── ABAS ──────────────────────────────────────────────────────── */
+.tabs-nav {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 20px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tabs-nav::-webkit-scrollbar { display: none; }
+.tab-btn {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 10px 16px;
+  color: var(--text2);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  margin-bottom: -1px;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  transition: color 0.15s;
+}
+.tab-btn:hover { color: var(--text1); }
+.tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+.tab-badge {
+  background: var(--surface3);
+  color: var(--text2);
+  border-radius: 10px;
+  padding: 1px 7px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+}
+.tab-btn.active .tab-badge { background: var(--accent); color: var(--bg); }
+
+/* ── CARDS DA FILA ─────────────────────────────────────────────── */
+.cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+.fila-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.1s;
+}
+.fila-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+.fila-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.fila-codigo { font-family: var(--font-mono); font-size: 12px; color: var(--accent); }
+.fila-card-body { margin-bottom: 10px; }
+.fila-cliente { font-size: 14px; font-weight: 600; margin-bottom: 4px; color: var(--text1); }
+.fila-desc { font-size: 12px; color: var(--text2); line-height: 1.5; }
+.fila-card-footer {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text3);
+  font-family: var(--font-mono);
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+  margin-top: 4px;
+}
+
+/* ── ARQUIVOS ──────────────────────────────────────────────────── */
+.arquivo-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 6px;
+}
+.arquivo-icon { font-size: 18px; flex-shrink: 0; }
+.arquivo-info { flex: 1; min-width: 0; }
+.arquivo-nome {
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 13px;
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.arquivo-nome:hover { text-decoration: underline; }
+.arquivo-meta { font-size: 11px; color: var(--text3); font-family: var(--font-mono); margin-top: 2px; }

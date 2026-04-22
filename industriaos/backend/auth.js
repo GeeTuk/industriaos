@@ -17,8 +17,8 @@ const PERFIL_ETAPAS = {
 
 function authMiddleware(req, res, next) {
   const header = req.headers['authorization'];
-  if (!header) return res.status(401).json({ erro: 'Token não fornecido' });
-  const token = header.replace('Bearer ', '');
+  const token = header ? header.replace('Bearer ', '') : req.query.token;
+  if (!token) return res.status(401).json({ erro: 'Token não fornecido' });
   try {
     const payload = jwt.verify(token, JWT_SECRET);
     req.user = payload;

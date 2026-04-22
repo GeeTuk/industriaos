@@ -1,8 +1,10 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const fs = require('fs');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const multer = require('multer');
 const { initDb } = require('./db');
 const { authMiddleware, requireAdmin, requireGerente, podeVerEtapa, podeOperarEtapa, podeDevolverEtapa, JWT_SECRET, PERFIL_ETAPAS } = require('./auth');
 
@@ -11,6 +13,18 @@ const PORT = process.env.PORT || 3000;
 
 // Init DB
 const db = initDb();
+
+// Uploads
+const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, '..', 'uploads');
+if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, UPLOADS_DIR),
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname);
+    cb(null, `${Date.now()}-${Math.random().toString(36).substr(2, 9)}${ext}`);
+  }
+});
+const upload = multer({ storage, limits: { fileSize: 50 * 1024 * 1024 } });
 
 // Middleware
 app.use(cors());
@@ -53,12 +67,13 @@ app.get('/api/auth/me', authMiddleware, (req, res) => {
   const user = db.prepare('SELECT id, nome, email, perfil, setor, ultimo_acesso FROM users WHERE id = ?').get(req.user.id);
   if (!user) return res.status(404).json({ erro: 'Usuário não encontrado' });
 
-  // Calcula etapas visíveis
-  const etapasVisiveis = [];
+  const etapasVisiveis = [], etapasOperar = [], etapasDevolver = [];
   for (let e = 1; e <= 11; e++) {
     if (podeVerEtapa(req.user, e, db)) etapasVisiveis.push(e);
+    if (podeOperarEtapa(req.user, e, db)) etapasOperar.push(e);
+    if (podeDevolverEtapa(req.user, e, db)) etapasDevolver.push(e);
   }
-  res.json({ ...user, etapasVisiveis });
+  res.json({ ...user, etapasVisiveis, etapasOperar, etapasDevolver });
 });
 
 // ── CLIENTES ──────────────────────────────────────────────────────
@@ -329,6 +344,28 @@ app.get('/api/auditoria', authMiddleware, requireAdmin, (req, res) => {
     ORDER BY a.criado_em DESC LIMIT 200
   `).all();
   res.json(logs);
+});
+
+// ── ARQUIVOS ──────────────────────────────────────────────────────
+app.post('/api/pedidos/:id/arquivos', authMiddleware, upload.single('arquivo'), (req, res) => {
+  if (!req.file) return res.status(400).json({ erro: 'Nenhum arquivo enviado' });
+  const pedido = db.prepare('SELECT * FROM pedidos WHERE id = ?').get(req.params.id);
+  if (!pedido) return res.status(404).json({ erro: 'Pedido não encontrado' });
+  const r = db.prepare(`INSERT INTO arquivos (pedido_id, nome, caminho, tipo, etapa, user_id) VALUES (?, ?, ?, ?, ?, ?)`)
+    .run(pedido.id, req.file.originalname, req.file.filename, req.file.mimetype, pedido.etapa_atual, req.user.id);
+  db.prepare(`INSERT INTO historico (pedido_id, user_id, tipo, etapa_de, etapa_para, descricao) VALUES (?, ?, ?, ?, ?, ?)`)
+    .run(pedido.id, req.user.id, 'arquivo', pedido.etapa_atual, pedido.etapa_atual, `Arquivo "${req.file.originalname}" anexado por ${req.user.nome}`);
+  res.json({ id: r.lastInsertRowid, nome: req.file.originalname });
+});
+
+app.get('/api/arquivos/:id', authMiddleware, (req, res) => {
+  const arquivo = db.prepare('SELECT * FROM arquivos WHERE id = ?').get(req.params.id);
+  if (!arquivo) return res.status(404).json({ erro: 'Arquivo não encontrado' });
+  const filePath = path.join(UPLOADS_DIR, arquivo.caminho);
+  if (!fs.existsSync(filePath)) return res.status(404).json({ erro: 'Arquivo não encontrado no servidor' });
+  res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(arquivo.nome)}"`);
+  res.setHeader('Content-Type', arquivo.tipo || 'application/octet-stream');
+  res.sendFile(filePath);
 });
 
 // ── ETAPAS INFO ───────────────────────────────────────────────────

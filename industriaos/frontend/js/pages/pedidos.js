@@ -145,6 +145,21 @@ async function abrirFichaPedido(id) {
       acoes += `<button class="btn btn-ghost btn-sm" onclick="modalEditarPedido(${pedido.id})">✎ Editar</button>`;
     }
 
+    // Arquivos
+    const arquivosHtml = pedido.arquivos?.length
+      ? pedido.arquivos.map(a => {
+          const isImg = /\.(jpg|jpeg|png|gif|webp)$/i.test(a.nome);
+          return `
+            <div class="arquivo-item">
+              <span class="arquivo-icon">${isImg ? '🖼' : '📄'}</span>
+              <div class="arquivo-info">
+                <a href="${api.arquivos.url(a.id)}" target="_blank" class="arquivo-nome">${a.nome}</a>
+                <div class="arquivo-meta">Etapa: ${ETAPAS_NOMES[a.etapa] || a.etapa} · ${formatDate(a.criado_em)}</div>
+              </div>
+            </div>`;
+        }).join('')
+      : `<div style="color:var(--text3);font-size:13px;padding:4px 0">Nenhum arquivo anexado</div>`;
+
     // Histórico
     const timeline = pedido.historico?.map(h => {
       const cores = { criacao: 'var(--accent)', avanco: 'var(--green)', devolucao: 'var(--red)', edicao: 'var(--blue)', parcial: 'var(--orange)' };
@@ -197,11 +212,38 @@ async function abrirFichaPedido(id) {
       </div>` : ''}
 
       <hr class="divider">
+      <div class="section-label" style="display:flex;justify-content:space-between;align-items:center">
+        <span>Arquivos</span>
+        ${canOperar || isAdmin ? `<label class="btn btn-ghost btn-sm" style="cursor:pointer;font-size:12px;font-weight:normal">
+          + Anexar
+          <input type="file" hidden onchange="uploadArquivo(${pedido.id}, this)" accept="image/*,.pdf,.ai,.eps,.psd,.zip,.rar">
+        </label>` : ''}
+      </div>
+      <div id="arquivos-list-${pedido.id}">${arquivosHtml}</div>
+
+      <hr class="divider">
       <div class="section-label">Histórico</div>
       <div class="timeline">${timeline}</div>
     `;
 
     abrirModal(`Pedido — ${pedido.codigo}`, body, '', 'modal-lg');
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
+// ── UPLOAD DE ARQUIVO ─────────────────────────────────────────────
+async function uploadArquivo(pedidoId, input) {
+  const file = input.files[0];
+  if (!file) return;
+  const formData = new FormData();
+  formData.append('arquivo', file);
+  try {
+    toast('Enviando arquivo...', 'info');
+    await api.arquivos.upload(pedidoId, formData);
+    toast('Arquivo enviado!', 'success');
+    fecharModalForce();
+    setTimeout(() => abrirFichaPedido(pedidoId), 300);
   } catch (e) {
     toast(e.message, 'error');
   }
@@ -242,9 +284,13 @@ async function confirmarAvancar(id) {
 }
 
 function modalDevolver(id, etapaAtual) {
-  // Destinos possíveis (etapas anteriores)
+  const isAdmin = ['admin','gerente_geral'].includes(currentUser.perfil);
+  const etapasDevolver = currentUser.etapasDevolver || [];
   const opts = Object.entries(ETAPAS_NOMES)
-    .filter(([k]) => parseInt(k) < etapaAtual)
+    .filter(([k]) => {
+      const e = parseInt(k);
+      return e < etapaAtual && (isAdmin || etapasDevolver.includes(e) || currentUser.etapasVisiveis?.includes(e));
+    })
     .map(([k,v]) => `<option value="${k}">${k} — ${v}</option>`)
     .join('');
 
