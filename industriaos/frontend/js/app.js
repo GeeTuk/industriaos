@@ -3,9 +3,10 @@ let currentUser = null;
 let currentPage = null;
 let etapasMap = {};
 
+// 8 etapas: Impressão e Corte são paralelas na etapa 5
 const ETAPAS_NOMES = {
   1: 'Contato', 2: 'Layout', 3: 'Aprovação', 4: 'Arte',
-  5: 'Impressão', 6: 'Corte', 7: 'Costura', 8: 'Motor', 9: 'Expedição'
+  5: 'Impressão / Corte', 6: 'Costura', 7: 'Motor', 8: 'Expedição'
 };
 const TIPO_LABELS = { INF: 'Inflável', LON: 'Lona', ADH: 'Adesivo', PLC: 'Placa', BAQ: 'Balão AR' };
 const PERFIL_LABELS = {
@@ -184,7 +185,7 @@ function toast(msg, tipo = 'info', dur = 3500) {
 
 // ── HELPERS ───────────────────────────────────────────────────────
 function tagEtapa(etapa) {
-  const cores = { 1:'gray',2:'gray',3:'yellow',4:'yellow',5:'orange',6:'orange',7:'blue',8:'blue',9:'green',10:'orange',11:'green' };
+  const cores = { 1:'gray',2:'gray',3:'yellow',4:'yellow',5:'orange',6:'blue',7:'blue',8:'green' };
   return `<span class="tag tag-${cores[etapa] || 'gray'}">${ETAPAS_NOMES[etapa] || etapa}</span>`;
 }
 

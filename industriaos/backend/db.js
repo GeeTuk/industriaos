@@ -68,6 +68,9 @@ function initDb() {
       impressao_solvente_ok INTEGER DEFAULT 0,
       impressao_uv_ok INTEGER DEFAULT 0,
       corte_paralelo INTEGER DEFAULT 0,
+      corte_ok INTEGER DEFAULT 0,
+      impressao_ok INTEGER DEFAULT 0,
+      categoria TEXT,
       vendedor_id INTEGER REFERENCES users(id),
       criado_em TEXT DEFAULT (datetime('now')),
       atualizado_em TEXT DEFAULT (datetime('now'))
@@ -147,6 +150,16 @@ function initDb() {
     console.log('✅ Banco de dados inicializado com dados de exemplo.');
     console.log('👤 Admin: admin@industriaos.com / admin123');
     console.log('👤 Demais usuários: [email acima] / senha123');
+  }
+
+  // Migrações: adicionar colunas que podem não existir em instâncias antigas
+  const migrations = [
+    'ALTER TABLE pedidos ADD COLUMN corte_ok INTEGER DEFAULT 0',
+    'ALTER TABLE pedidos ADD COLUMN impressao_ok INTEGER DEFAULT 0',
+    'ALTER TABLE pedidos ADD COLUMN categoria TEXT',
+  ];
+  for (const m of migrations) {
+    try { db.exec(m); } catch (_) { /* coluna já existe */ }
   }
 
   return db;

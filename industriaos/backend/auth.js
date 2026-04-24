@@ -2,17 +2,18 @@ const jwt = require('jsonwebtoken');
 const JWT_SECRET = process.env.JWT_SECRET || 'industriaos_secret_2026_troque_em_producao';
 
 // Perfis padrão e suas etapas visíveis
+// Etapas: 1=Contato 2=Layout 3=Aprovação 4=Arte 5=Impressão/Corte(paralelo) 6=Costura 7=Motor 8=Expedição
 const PERFIL_ETAPAS = {
   vendedor:      { ver: [1,2,3], operar: [1,3], devolver: [3] },
   designer:      { ver: [2,3,4], operar: [2,4], devolver: [2,4] },
   moldes:        { ver: [2,3,4], operar: [2,4], devolver: [2,4] },
   impressao:     { ver: [5], operar: [5], devolver: [5] },
-  corte:         { ver: [5,6], operar: [6], devolver: [6] },
-  costura:       { ver: [6,7], operar: [7], devolver: [7] },
-  motor:         { ver: [7,8], operar: [8], devolver: [8] },
-  expedicao:     { ver: [8,9], operar: [9], devolver: [9] },
-  gerente_geral: { ver: [1,2,3,4,5,6,7,8,9], operar: [1,2,3,4,5,6,7,8,9], devolver: [1,2,3,4,5,6,7,8,9] },
-  admin:         { ver: [1,2,3,4,5,6,7,8,9], operar: [1,2,3,4,5,6,7,8,9], devolver: [1,2,3,4,5,6,7,8,9] },
+  corte:         { ver: [5,6], operar: [5], devolver: [5] },
+  costura:       { ver: [5,6], operar: [6], devolver: [6] },
+  motor:         { ver: [6,7], operar: [7], devolver: [7] },
+  expedicao:     { ver: [7,8], operar: [8], devolver: [8] },
+  gerente_geral: { ver: [1,2,3,4,5,6,7,8], operar: [1,2,3,4,5,6,7,8], devolver: [1,2,3,4,5,6,7,8] },
+  admin:         { ver: [1,2,3,4,5,6,7,8], operar: [1,2,3,4,5,6,7,8], devolver: [1,2,3,4,5,6,7,8] },
 };
 
 function authMiddleware(req, res, next) {

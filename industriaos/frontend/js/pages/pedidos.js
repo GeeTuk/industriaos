@@ -100,12 +100,12 @@ async function abrirFichaPedido(id) {
     const isAdmin = ['admin','gerente_geral'].includes(currentUser.perfil);
     const showValor = ['admin','gerente_geral','vendedor'].includes(currentUser.perfil);
 
-    // Etapas que o tipo de produto pula
-    const etapasAtivas = [1,2,3,4,5,6,7];
-    if (['INF','BAQ'].includes(pedido.tipo)) etapasAtivas.push(8);
-    etapasAtivas.push(9);
+    // Etapas que o tipo de produto pula (Motor=7 só para INF e BAQ)
+    const etapasAtivas = [1,2,3,4,5,6];
+    if (['INF','BAQ'].includes(pedido.tipo)) etapasAtivas.push(7);
+    etapasAtivas.push(8);
 
-    const progressBar = Array.from({length: 9}, (_,i) => {
+    const progressBar = Array.from({length: 8}, (_,i) => {
       const e = i + 1;
       const done = pedido.etapa_atual > e;
       const curr = pedido.etapa_atual === e;
@@ -113,31 +113,56 @@ async function abrirFichaPedido(id) {
       return `<div class="etapa-dot ${skip ? 'skip' : done ? 'done' : curr ? 'current' : ''}" title="${ETAPAS_NOMES[e]}"></div>`;
     }).join('');
 
-    // Impressão paralela (etapa 5)
+    // Status paralelo Impressão + Corte (etapa 5)
     let impressaoStatus = '';
-    if (pedido.etapa_atual === 5 || (pedido.precisa_solvente || pedido.precisa_uv)) {
-      const solv = pedido.precisa_solvente ? (pedido.impressao_solvente_ok ? '✓ Solvente' : '⏳ Solvente') : '';
-      const uv = pedido.precisa_uv ? (pedido.impressao_uv_ok ? '✓ UV' : '⏳ UV') : '';
-      if (solv || uv) {
-        impressaoStatus = `<div style="display:flex;gap:8px;margin-top:8px">
-          ${solv ? `<span class="tag ${pedido.impressao_solvente_ok ? 'tag-green' : 'tag-orange'}">${solv}</span>` : ''}
-          ${uv ? `<span class="tag ${pedido.impressao_uv_ok ? 'tag-green' : 'tag-orange'}">${uv}</span>` : ''}
-        </div>`;
-      }
+    const mostraParalelo = pedido.etapa_atual === 5 || pedido.corte_ok || pedido.impressao_ok || pedido.precisa_solvente || pedido.precisa_uv;
+    if (mostraParalelo) {
+      const corteTag = `<span class="tag ${pedido.corte_ok ? 'tag-green' : 'tag-orange'}">${pedido.corte_ok ? '✓ Corte' : '⏳ Corte'}</span>`;
+      const solv = pedido.precisa_solvente ? `<span class="tag ${pedido.impressao_solvente_ok ? 'tag-green' : 'tag-orange'}">${pedido.impressao_solvente_ok ? '✓ Solvente' : '⏳ Solvente'}</span>` : '';
+      const uv = pedido.precisa_uv ? `<span class="tag ${pedido.impressao_uv_ok ? 'tag-green' : 'tag-orange'}">${pedido.impressao_uv_ok ? '✓ UV' : '⏳ UV'}</span>` : '';
+      const impTag = (!pedido.precisa_solvente && !pedido.precisa_uv)
+        ? `<span class="tag ${pedido.impressao_ok ? 'tag-green' : 'tag-orange'}">${pedido.impressao_ok ? '✓ Impressão' : '⏳ Impressão'}</span>`
+        : '';
+      impressaoStatus = `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+        ${corteTag}${impTag}${solv}${uv}
+      </div>`;
     }
 
     // Ações disponíveis
     let acoes = '';
     if (canOperar && pedido.status === 'ativo') {
-      if (pedido.etapa_atual < 9) {
-        // Impressão com filas paralelas (etapa 5)
-        if (pedido.etapa_atual === 5 && pedido.precisa_solvente && pedido.precisa_uv) {
-          acoes += `<button class="btn btn-success btn-sm" onclick="avancarImpressao(${pedido.id}, 'solvente')">✓ Solvente Pronta</button>`;
-          acoes += `<button class="btn btn-success btn-sm" onclick="avancarImpressao(${pedido.id}, 'uv')">✓ UV Pronta</button>`;
+      if (pedido.etapa_atual < 8) {
+        // Etapa 5: Impressão e Corte em paralelo
+        if (pedido.etapa_atual === 5) {
+          const isCorte = ['corte','admin','gerente_geral'].includes(currentUser.perfil);
+          const isImpressao = ['impressao','admin','gerente_geral'].includes(currentUser.perfil);
+
+          // Botões de Corte
+          if (isCorte && !pedido.corte_ok) {
+            acoes += `<button class="btn btn-success btn-sm" onclick="avancarParalelo(${pedido.id}, 'corte')">✓ Corte Pronto</button>`;
+          }
+
+          // Botões de Impressão
+          if (isImpressao && !pedido.impressao_ok) {
+            if (pedido.precisa_solvente && !pedido.impressao_solvente_ok) {
+              acoes += `<button class="btn btn-success btn-sm" onclick="avancarParalelo(${pedido.id}, 'solvente')">✓ Solvente Pronta</button>`;
+            }
+            if (pedido.precisa_uv && !pedido.impressao_uv_ok) {
+              acoes += `<button class="btn btn-success btn-sm" onclick="avancarParalelo(${pedido.id}, 'uv')">✓ UV Pronta</button>`;
+            }
+            if (!pedido.precisa_solvente && !pedido.precisa_uv) {
+              acoes += `<button class="btn btn-success btn-sm" onclick="avancarParalelo(${pedido.id}, 'impressao')">✓ Impressão Pronta</button>`;
+            }
+          }
+
+          if (!acoes) {
+            acoes += `<span style="color:var(--text3);font-size:13px">⏳ Aguardando equipes...</span>`;
+          }
+          acoes += `<button class="btn btn-orange btn-sm" onclick="modalDevolver(${pedido.id}, ${pedido.etapa_atual})">↩ Devolver</button>`;
         } else {
           acoes += `<button class="btn btn-success btn-sm" onclick="modalAvancar(${pedido.id}, ${pedido.etapa_atual})">→ Avançar Etapa</button>`;
+          acoes += `<button class="btn btn-orange btn-sm" onclick="modalDevolver(${pedido.id}, ${pedido.etapa_atual})">↩ Devolver</button>`;
         }
-        acoes += `<button class="btn btn-orange btn-sm" onclick="modalDevolver(${pedido.id}, ${pedido.etapa_atual})">↩ Devolver</button>`;
       } else {
         acoes += `<button class="btn btn-success btn-sm" onclick="modalAvancar(${pedido.id}, ${pedido.etapa_atual})">✓ Concluir (Expedir)</button>`;
       }
@@ -244,6 +269,7 @@ async function abrirFichaPedido(id) {
       <div class="info-row">
         <div class="info-item"><div class="info-label">Cliente</div><div class="info-value">${pedido.cliente_nome || '—'}</div></div>
         <div class="info-item"><div class="info-label">Vendedor</div><div class="info-value">${pedido.vendedor_nome || '—'}</div></div>
+        ${pedido.categoria ? `<div class="info-item"><div class="info-label">Categoria</div><div class="info-value">${pedido.categoria}</div></div>` : ''}
         <div class="info-item"><div class="info-label">Prazo</div><div class="info-value">${formatDateShort(pedido.prazo) || '—'}</div></div>
         ${showValor ? `<div class="info-item"><div class="info-label">Orçamento</div><div class="info-value">${formatMoney(pedido.valor_orcamento)}</div></div>` : ''}
       </div>
@@ -298,11 +324,13 @@ async function uploadArquivo(pedidoId, input) {
 }
 
 // ── AÇÕES ─────────────────────────────────────────────────────────
-async function avancarImpressao(id, fila) {
+// Avança uma das filas paralelas (corte, solvente, uv, impressao)
+async function avancarParalelo(id, fila) {
   try {
     const res = await api.pedidos.avancar(id, { fila });
     toast(res.mensagem, 'success');
     fecharModalForce();
+    setTimeout(() => abrirFichaPedido(id), 300);
     carregarPedidos();
   } catch (e) { toast(e.message, 'error'); }
 }
@@ -386,23 +414,66 @@ async function confirmarDevolver(id) {
   } catch (e) { toast(e.message, 'error'); }
 }
 
+// ── CATÁLOGOS ─────────────────────────────────────────────────────
+const NP_CATEGORIAS = {
+  INF: ['Tenda Casa', 'Tenda Padrão', 'Tenda Aranha', 'Portal', 'Roof Top', '3D', 'Colchão', 'Túnel'],
+  BAQ: ['Normal Shape', 'Special Shape', 'Racer'],
+  LON: [], ADH: [], PLC: [],
+};
+const NP_MATERIAIS = {
+  INF: ['Nylon'],
+  BAQ: ['Nylon'],
+  LON: ['Lona'],
+  ADH: ['Transparente', 'Branco', 'Lux'],
+  PLC: ['2mm', '1mm'],
+};
+const NP_CORES = ['Vermelho', 'Azul Omni', 'Azul 388C', 'Verde Maçã', 'Branco', 'Verde Bandeira', 'Laranja'];
+
+function npAtualizarCampos() {
+  const tipo = document.getElementById('np-tipo')?.value;
+  // Categoria
+  const cats = NP_CATEGORIAS[tipo] || [];
+  const catEl = document.getElementById('np-categoria');
+  if (catEl) {
+    catEl.innerHTML = cats.length
+      ? cats.map(c => `<option value="${c}">${c}</option>`).join('')
+      : '<option value="">— Não aplicável —</option>';
+    catEl.disabled = cats.length === 0;
+    catEl.closest('.form-group').style.display = cats.length ? '' : 'none';
+  }
+  // Material
+  const mats = NP_MATERIAIS[tipo] || [];
+  const matEl = document.getElementById('np-material');
+  if (matEl) {
+    matEl.innerHTML = mats.map(m => `<option value="${m}">${m}</option>`).join('');
+  }
+}
+
 // ── NOVO PEDIDO ───────────────────────────────────────────────────
 async function modalNovoPedido() {
   let clientes = [];
   try { clientes = await api.clientes.listar(); } catch {}
   const clienteOpts = clientes.map(c => `<option value="${c.id}">${c.razao_social}</option>`).join('');
 
+  const coresCheckboxes = NP_CORES.map(c =>
+    `<label class="checkbox-row" style="min-width:130px"><input type="checkbox" class="np-cor-check" value="${c}"> ${c}</label>`
+  ).join('');
+
   const body = `
     <div class="form-grid">
       <div class="form-group">
         <label>Tipo de Produto *</label>
-        <select id="np-tipo">
+        <select id="np-tipo" onchange="npAtualizarCampos()">
           <option value="INF">Inflável</option>
           <option value="LON">Lona</option>
           <option value="ADH">Adesivo</option>
           <option value="PLC">Placa</option>
           <option value="BAQ">Balão de Ar Quente</option>
         </select>
+      </div>
+      <div class="form-group" id="np-categoria-group">
+        <label>Categoria</label>
+        <select id="np-categoria"></select>
       </div>
       <div class="form-group">
         <label>Cliente</label>
@@ -411,6 +482,14 @@ async function modalNovoPedido() {
           ${clienteOpts}
         </select>
       </div>
+      <div class="form-group">
+        <label>Material</label>
+        <select id="np-material"></select>
+      </div>
+      <div class="form-group span2">
+        <label>Cores (selecione quantas quiser)</label>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px">${coresCheckboxes}</div>
+      </div>
       <div class="form-group span2">
         <label>Descrição do Pedido *</label>
         <textarea id="np-descricao" placeholder="Descreva o produto, finalidade, informações relevantes..."></textarea>
@@ -418,14 +497,6 @@ async function modalNovoPedido() {
       <div class="form-group">
         <label>Dimensões</label>
         <input type="text" id="np-dimensoes" placeholder="ex: 3m x 2m">
-      </div>
-      <div class="form-group">
-        <label>Material</label>
-        <input type="text" id="np-material" placeholder="ex: Nylon 420D">
-      </div>
-      <div class="form-group">
-        <label>Cores</label>
-        <input type="text" id="np-cores" placeholder="ex: Azul, branco, vermelho">
       </div>
       <div class="form-group">
         <label>Prazo de Entrega</label>
@@ -442,16 +513,22 @@ async function modalNovoPedido() {
     <button class="btn btn-primary" onclick="confirmarNovoPedido()">Criar Pedido</button>
   `;
   abrirModal('Novo Pedido', body, footer);
+  // Inicializar dropdowns dependentes
+  setTimeout(npAtualizarCampos, 0);
 }
 
 async function confirmarNovoPedido() {
+  const tipo = document.getElementById('np-tipo').value;
+  const cats = NP_CATEGORIAS[tipo] || [];
+  const coresSelecionadas = [...document.querySelectorAll('.np-cor-check:checked')].map(el => el.value).join(', ');
   const dados = {
-    tipo: document.getElementById('np-tipo').value,
+    tipo,
+    categoria: cats.length ? document.getElementById('np-categoria')?.value : null,
     cliente_id: document.getElementById('np-cliente').value || null,
     descricao: document.getElementById('np-descricao').value.trim(),
     dimensoes: document.getElementById('np-dimensoes').value,
     material: document.getElementById('np-material').value,
-    cores: document.getElementById('np-cores').value,
+    cores: coresSelecionadas,
     prazo: document.getElementById('np-prazo').value,
     valor_orcamento: document.getElementById('np-valor').value || null,
   };

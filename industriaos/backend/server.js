@@ -31,16 +31,16 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '..', 'frontend')));
 
+// 8 etapas: Corte e Impressão ocorrem em PARALELO na etapa 5
 const ETAPAS = {
-  1: { nome: 'Contato',   setor: 'Comercial' },
-  2: { nome: 'Layout',    setor: 'Arte' },
-  3: { nome: 'Aprovação', setor: 'Comercial' },
-  4: { nome: 'Arte',      setor: 'Arte' },
-  5: { nome: 'Impressão', setor: 'Impressão' },
-  6: { nome: 'Corte',     setor: 'Corte' },
-  7: { nome: 'Costura',   setor: 'Costura' },
-  8: { nome: 'Motor',     setor: 'Montagem' },
-  9: { nome: 'Expedição', setor: 'Expedição' },
+  1: { nome: 'Contato',           setor: 'Comercial' },
+  2: { nome: 'Layout',            setor: 'Arte' },
+  3: { nome: 'Aprovação',         setor: 'Comercial' },
+  4: { nome: 'Arte',              setor: 'Arte' },
+  5: { nome: 'Impressão / Corte', setor: 'Produção' },
+  6: { nome: 'Costura',           setor: 'Costura' },
+  7: { nome: 'Motor',             setor: 'Montagem' },
+  8: { nome: 'Expedição',         setor: 'Expedição' },
 };
 
 // ── AUTH ──────────────────────────────────────────────────────────
@@ -66,7 +66,7 @@ app.get('/api/auth/me', authMiddleware, (req, res) => {
   if (!user) return res.status(404).json({ erro: 'Usuário não encontrado' });
 
   const etapasVisiveis = [], etapasOperar = [], etapasDevolver = [];
-  for (let e = 1; e <= 9; e++) {
+  for (let e = 1; e <= 8; e++) {
     if (podeVerEtapa(req.user, e, db)) etapasVisiveis.push(e);
     if (podeOperarEtapa(req.user, e, db)) etapasOperar.push(e);
     if (podeDevolverEtapa(req.user, e, db)) etapasDevolver.push(e);
@@ -171,14 +171,14 @@ app.get('/api/pedidos/:id', authMiddleware, (req, res) => {
 app.post('/api/pedidos', authMiddleware, (req, res) => {
   if (!podeOperarEtapa(req.user, 1, db)) return res.status(403).json({ erro: 'Sem permissão para criar pedidos' });
 
-  const { tipo, cliente_id, descricao, dimensoes, material, cores, prazo, valor_orcamento, precisa_solvente, precisa_uv } = req.body;
+  const { tipo, cliente_id, descricao, dimensoes, material, cores, prazo, valor_orcamento, precisa_solvente, precisa_uv, categoria } = req.body;
   if (!tipo || !descricao) return res.status(400).json({ erro: 'Tipo e descrição obrigatórios' });
 
   const codigo = gerarCodigo(tipo);
   const r = db.prepare(`
-    INSERT INTO pedidos (codigo, tipo, cliente_id, descricao, dimensoes, material, cores, prazo, valor_orcamento, precisa_solvente, precisa_uv, vendedor_id, etapa_atual)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
-  `).run(codigo, tipo, cliente_id || null, descricao, dimensoes, material, cores, prazo, valor_orcamento || null, precisa_solvente ? 1 : 0, precisa_uv ? 1 : 0, req.user.id);
+    INSERT INTO pedidos (codigo, tipo, cliente_id, descricao, dimensoes, material, cores, prazo, valor_orcamento, precisa_solvente, precisa_uv, categoria, vendedor_id, etapa_atual)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+  `).run(codigo, tipo, cliente_id || null, descricao, dimensoes, material, cores, prazo, valor_orcamento || null, precisa_solvente ? 1 : 0, precisa_uv ? 1 : 0, categoria || null, req.user.id);
 
   db.prepare('INSERT INTO historico (pedido_id, user_id, tipo, etapa_de, etapa_para, descricao) VALUES (?, ?, ?, ?, ?, ?)').run(r.lastInsertRowid, req.user.id, 'criacao', null, 1, `Pedido criado por ${req.user.nome}`);
 
@@ -195,36 +195,64 @@ app.post('/api/pedidos/:id/avancar', authMiddleware, (req, res) => {
     return res.status(403).json({ erro: 'Sem permissão para operar esta etapa' });
   }
 
-  // Designer define impressora na etapa Arte (4)
-  if (pedido.etapa_atual === 4 && (precisa_solvente !== undefined || precisa_uv !== undefined)) {
-    db.prepare('UPDATE pedidos SET precisa_solvente = ?, precisa_uv = ? WHERE id = ?')
+  // Arte (4): designer define quais impressões serão necessárias
+  if (pedido.etapa_atual === 4) {
+    db.prepare('UPDATE pedidos SET precisa_solvente = ?, precisa_uv = ?, corte_ok = 0, impressao_ok = 0, impressao_solvente_ok = 0, impressao_uv_ok = 0 WHERE id = ?')
       .run(precisa_solvente ? 1 : 0, precisa_uv ? 1 : 0, pedido.id);
+    // Avança normalmente para etapa 5
   }
 
-  // Impressão: duas filas (solvente e UV)
+  // ── ETAPA 5: Impressão / Corte em PARALELO ────────────────────────
   if (pedido.etapa_atual === 5) {
     const p = db.prepare('SELECT * FROM pedidos WHERE id = ?').get(pedido.id);
-    if (p.precisa_solvente && p.precisa_uv) {
-      if (fila === 'solvente') {
-        db.prepare('UPDATE pedidos SET impressao_solvente_ok = 1, atualizado_em = CURRENT_TIMESTAMP WHERE id = ?').run(pedido.id);
-        db.prepare('INSERT INTO historico (pedido_id, user_id, tipo, etapa_de, etapa_para, descricao) VALUES (?, ?, ?, ?, ?, ?)').run(pedido.id, req.user.id, 'parcial', 5, 5, `Impressão Solvente concluída por ${req.user.nome}`);
-        const atual = db.prepare('SELECT * FROM pedidos WHERE id = ?').get(pedido.id);
-        if (!atual.impressao_uv_ok) return res.json({ mensagem: 'Solvente registrada. Aguardando UV.' });
-      } else if (fila === 'uv') {
-        db.prepare('UPDATE pedidos SET impressao_uv_ok = 1, atualizado_em = CURRENT_TIMESTAMP WHERE id = ?').run(pedido.id);
-        db.prepare('INSERT INTO historico (pedido_id, user_id, tipo, etapa_de, etapa_para, descricao) VALUES (?, ?, ?, ?, ?, ?)').run(pedido.id, req.user.id, 'parcial', 5, 5, `Impressão UV concluída por ${req.user.nome}`);
-        const atual = db.prepare('SELECT * FROM pedidos WHERE id = ?').get(pedido.id);
-        if (!atual.impressao_solvente_ok) return res.json({ mensagem: 'UV registrada. Aguardando Solvente.' });
-      }
+
+    if (fila === 'corte') {
+      // Equipe de Corte marca corte como feito
+      db.prepare('UPDATE pedidos SET corte_ok = 1, atualizado_em = CURRENT_TIMESTAMP WHERE id = ?').run(pedido.id);
+      db.prepare('INSERT INTO historico (pedido_id, user_id, tipo, etapa_de, etapa_para, descricao) VALUES (?, ?, ?, ?, ?, ?)').run(pedido.id, req.user.id, 'parcial', 5, 5, `Corte concluído por ${req.user.nome}`);
+      const atualizado = db.prepare('SELECT * FROM pedidos WHERE id = ?').get(pedido.id);
+      if (!atualizado.impressao_ok) return res.json({ mensagem: 'Corte registrado! Aguardando conclusão da Impressão.' });
+      // Ambos prontos → avança abaixo
+
+    } else if (fila === 'solvente') {
+      db.prepare('UPDATE pedidos SET impressao_solvente_ok = 1, atualizado_em = CURRENT_TIMESTAMP WHERE id = ?').run(pedido.id);
+      db.prepare('INSERT INTO historico (pedido_id, user_id, tipo, etapa_de, etapa_para, descricao) VALUES (?, ?, ?, ?, ?, ?)').run(pedido.id, req.user.id, 'parcial', 5, 5, `Impressão Solvente concluída por ${req.user.nome}`);
+      const atualizado = db.prepare('SELECT * FROM pedidos WHERE id = ?').get(pedido.id);
+      // Impressão só fica pronta quando todas as filas requeridas estiverem ok
+      const impCompleta = !atualizado.precisa_uv || atualizado.impressao_uv_ok;
+      if (!impCompleta) return res.json({ mensagem: 'Solvente registrada! Aguardando UV.' });
+      db.prepare('UPDATE pedidos SET impressao_ok = 1, atualizado_em = CURRENT_TIMESTAMP WHERE id = ?').run(pedido.id);
+      const final = db.prepare('SELECT * FROM pedidos WHERE id = ?').get(pedido.id);
+      if (!final.corte_ok) return res.json({ mensagem: 'Impressão concluída! Aguardando Corte.' });
+      // Ambos prontos → avança abaixo
+
+    } else if (fila === 'uv') {
+      db.prepare('UPDATE pedidos SET impressao_uv_ok = 1, atualizado_em = CURRENT_TIMESTAMP WHERE id = ?').run(pedido.id);
+      db.prepare('INSERT INTO historico (pedido_id, user_id, tipo, etapa_de, etapa_para, descricao) VALUES (?, ?, ?, ?, ?, ?)').run(pedido.id, req.user.id, 'parcial', 5, 5, `Impressão UV concluída por ${req.user.nome}`);
+      const atualizado = db.prepare('SELECT * FROM pedidos WHERE id = ?').get(pedido.id);
+      const impCompleta = !atualizado.precisa_solvente || atualizado.impressao_solvente_ok;
+      if (!impCompleta) return res.json({ mensagem: 'UV registrada! Aguardando Solvente.' });
+      db.prepare('UPDATE pedidos SET impressao_ok = 1, atualizado_em = CURRENT_TIMESTAMP WHERE id = ?').run(pedido.id);
+      const final = db.prepare('SELECT * FROM pedidos WHERE id = ?').get(pedido.id);
+      if (!final.corte_ok) return res.json({ mensagem: 'Impressão concluída! Aguardando Corte.' });
+      // Ambos prontos → avança abaixo
+
+    } else {
+      // Impressão simples (sem solvente/UV separado)
+      db.prepare('UPDATE pedidos SET impressao_ok = 1, atualizado_em = CURRENT_TIMESTAMP WHERE id = ?').run(pedido.id);
+      db.prepare('INSERT INTO historico (pedido_id, user_id, tipo, etapa_de, etapa_para, descricao) VALUES (?, ?, ?, ?, ?, ?)').run(pedido.id, req.user.id, 'parcial', 5, 5, `Impressão concluída por ${req.user.nome}`);
+      const atualizado = db.prepare('SELECT * FROM pedidos WHERE id = ?').get(pedido.id);
+      if (!atualizado.corte_ok) return res.json({ mensagem: 'Impressão registrada! Aguardando Corte.' });
+      // Ambos prontos → avança abaixo
     }
   }
 
-  // Calcular próxima etapa
+  // ── AVANÇAR para próxima etapa ─────────────────────────────────────
   let proximaEtapa = pedido.etapa_atual + 1;
 
-  // Pula Motor (8) para tipos que não precisam
-  if (proximaEtapa === 8 && !['INF', 'BAQ'].includes(pedido.tipo)) {
-    proximaEtapa = 9;
+  // Pula Motor (7) para tipos que não precisam de montagem
+  if (proximaEtapa === 7 && !['INF', 'BAQ'].includes(pedido.tipo)) {
+    proximaEtapa = 8;
   }
 
   db.prepare('UPDATE pedidos SET etapa_atual = ?, atualizado_em = CURRENT_TIMESTAMP WHERE id = ?').run(proximaEtapa, pedido.id);
@@ -277,7 +305,7 @@ app.put('/api/pedidos/:id', authMiddleware, (req, res) => {
 // ── DASHBOARD / MÉTRICAS ──────────────────────────────────────────
 app.get('/api/dashboard', authMiddleware, (req, res) => {
   const porEtapa = [];
-  for (let e = 1; e <= 9; e++) {
+  for (let e = 1; e <= 8; e++) {
     if (!podeVerEtapa(req.user, e, db)) continue;
     const count = db.prepare(`SELECT COUNT(*) as c FROM pedidos WHERE etapa_atual = ? AND status = 'ativo'`).get(e);
     porEtapa.push({ etapa: e, nome: ETAPAS[e]?.nome, total: count.c });
