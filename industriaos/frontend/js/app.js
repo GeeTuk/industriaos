@@ -91,13 +91,14 @@ function mostrarApp() {
 
 // ── NAVIGATION ────────────────────────────────────────────────────
 const PAGES = [
-  { id: 'dashboard',    label: 'Dashboard',           icon: '⬡', section: 'Principal',      perfis: 'all' },
-  { id: 'pedidos',      label: 'Pedidos',              icon: '◈', section: 'Produção',       perfis: 'all' },
-  { id: 'fila',         label: 'Minha Fila',           icon: '▷', section: 'Produção',       perfis: ['vendedor','designer','moldes','impressao','corte','costura','motor','expedicao','operador'] },
-  { id: 'suprimentos',  label: 'Pedidos de Suprimentos', icon: '◧', section: 'Operacional', perfis: ['admin','gerente_geral','impressao','corte','costura','motor','expedicao'] },
-  { id: 'clientes',     label: 'Clientes',             icon: '◎', section: 'Comercial',      perfis: ['admin','gerente_geral','vendedor'] },
-  { id: 'usuarios',     label: 'Usuários',             icon: '○', section: 'Administração',  perfis: ['admin'] },
-  { id: 'auditoria',    label: 'Auditoria',            icon: '◉', section: 'Administração',  perfis: ['admin'] },
+  { id: 'dashboard',   label: 'Dashboard',   icon: '📊', section: '',           perfis: 'all' },
+  { id: 'fila',        label: 'Minha Fila',  icon: '⚡', section: 'Operação',   perfis: ['vendedor','designer','moldes','impressao','corte','costura','motor','expedicao','operador'] },
+  { id: 'pedidos',     label: 'Pedidos',     icon: '📋', section: 'Operação',   perfis: 'all' },
+  { id: 'suprimentos', label: 'Suprimentos', icon: '📦', section: 'Operação',   perfis: ['admin','gerente_geral','impressao','corte','costura','motor','expedicao'] },
+  { id: 'clientes',    label: 'Clientes',    icon: '👥', section: 'Comercial',  perfis: ['admin','gerente_geral','vendedor'] },
+  { id: 'relatorios',  label: 'Relatórios',  icon: '📈', section: 'Gestão',     perfis: ['admin','gerente_geral'] },
+  { id: 'usuarios',    label: 'Usuários',    icon: '👤', section: 'Sistema',    perfis: ['admin'] },
+  { id: 'auditoria',   label: 'Auditoria',   icon: '🔍', section: 'Sistema',    perfis: ['admin'] },
 ];
 
 function buildNav() {
@@ -109,11 +110,13 @@ function buildNav() {
     if (p.perfis !== 'all' && !p.perfis.includes(currentUser.perfil)) continue;
 
     if (p.section !== lastSection) {
-      const sec = document.createElement('div');
-      sec.className = 'nav-section';
-      sec.textContent = p.section;
-      nav.appendChild(sec);
       lastSection = p.section;
+      if (p.section) {
+        const sec = document.createElement('div');
+        sec.className = 'nav-section';
+        sec.textContent = p.section;
+        nav.appendChild(sec);
+      }
     }
 
     const item = document.createElement('div');
@@ -131,7 +134,7 @@ function navigate(page, params = {}) {
   const navEl = document.getElementById(`nav-${page}`);
   if (navEl) navEl.classList.add('active');
 
-  const titles = { dashboard: 'Dashboard', pedidos: 'Pedidos', fila: 'Minha Fila', clientes: 'Clientes', usuarios: 'Usuários & Permissões', auditoria: 'Log de Auditoria' };
+  const titles = { dashboard: 'Dashboard', pedidos: 'Pedidos', fila: 'Minha Fila', clientes: 'Clientes', usuarios: 'Usuários & Permissões', auditoria: 'Log de Auditoria', suprimentos: 'Suprimentos', relatorios: 'Relatórios' };
   document.getElementById('page-title').textContent = titles[page] || page;
   document.getElementById('topbar-actions').innerHTML = '';
 
@@ -145,6 +148,7 @@ function navigate(page, params = {}) {
     case 'clientes': renderClientes(); break;
     case 'usuarios': renderUsuarios(); break;
     case 'suprimentos': renderSuprimentos(); break;
+    case 'relatorios': renderRelatorios(); break;
     case 'auditoria': renderAuditoria(); break;
     default: content.innerHTML = '<div class="empty-state"><div class="empty-icon">🚧</div><div class="empty-text">Página em construção</div></div>';
   }

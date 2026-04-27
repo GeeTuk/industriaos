@@ -459,6 +459,84 @@ app.get('/api/dashboard', authMiddleware, (req, res) => {
   });
 });
 
+// ── RELATÓRIOS ────────────────────────────────────────────────────
+app.get('/api/relatorios', authMiddleware, (req, res) => {
+  if (!['admin','gerente_geral'].includes(req.user.perfil))
+    return res.status(403).json({ erro: 'Acesso negado' });
+
+  const dias = parseInt(req.query.dias || '30');
+  const dataInicio = new Date(Date.now() - dias * 86400000).toISOString().slice(0, 10);
+
+  // Resumo financeiro
+  const financeiro = db.prepare(`
+    SELECT
+      COUNT(*) as total_pedidos,
+      COUNT(valor_orcamento) as com_valor,
+      ROUND(SUM(COALESCE(valor_orcamento, 0)), 2) as valor_total,
+      ROUND(AVG(CASE WHEN valor_orcamento IS NOT NULL THEN valor_orcamento END), 2) as valor_medio
+    FROM pedidos WHERE date(criado_em) >= ?
+  `).get(dataInicio);
+
+  // Por tipo de produto
+  const porTipo = db.prepare(`
+    SELECT tipo, COUNT(*) as qtd,
+           ROUND(SUM(COALESCE(valor_orcamento, 0)), 2) as valor_total
+    FROM pedidos WHERE date(criado_em) >= ?
+    GROUP BY tipo ORDER BY qtd DESC
+  `).all(dataInicio);
+
+  // Por status
+  const porStatus = db.prepare(`
+    SELECT status, COUNT(*) as qtd FROM pedidos
+    WHERE date(criado_em) >= ? GROUP BY status
+  `).all(dataInicio);
+
+  // Por mês (últimos 12 meses sempre)
+  const porMes = db.prepare(`
+    SELECT strftime('%Y-%m', criado_em) as mes,
+           COUNT(*) as qtd,
+           ROUND(SUM(COALESCE(valor_orcamento, 0)), 2) as valor_total
+    FROM pedidos WHERE date(criado_em) >= date('now', '-365 days')
+    GROUP BY mes ORDER BY mes
+  `).all();
+
+  // Eficiência: tempo médio em horas por etapa
+  const eficiencia = db.prepare(`
+    SELECT
+      h1.etapa_para as etapa,
+      COUNT(*) as passagens,
+      ROUND(AVG((julianday(h2.criado_em) - julianday(h1.criado_em)) * 24), 1) as media_horas
+    FROM historico h1
+    JOIN historico h2 ON h2.pedido_id = h1.pedido_id
+      AND h2.etapa_de = h1.etapa_para
+      AND h2.tipo = 'avanco'
+      AND h2.criado_em > h1.criado_em
+    WHERE h1.tipo IN ('avanco','criacao')
+    GROUP BY h1.etapa_para
+    ORDER BY etapa
+  `).all();
+
+  // Top 5 clientes
+  const topClientes = db.prepare(`
+    SELECT c.razao_social as nome, COUNT(p.id) as qtd,
+           ROUND(SUM(COALESCE(p.valor_orcamento, 0)), 2) as valor_total
+    FROM pedidos p JOIN clientes c ON p.cliente_id = c.id
+    WHERE date(p.criado_em) >= ?
+    GROUP BY p.cliente_id ORDER BY qtd DESC LIMIT 5
+  `).all(dataInicio);
+
+  // Top 5 vendedores
+  const topVendedores = db.prepare(`
+    SELECT u.nome, COUNT(p.id) as qtd,
+           ROUND(SUM(COALESCE(p.valor_orcamento, 0)), 2) as valor_total
+    FROM pedidos p JOIN users u ON p.vendedor_id = u.id
+    WHERE date(p.criado_em) >= ?
+    GROUP BY p.vendedor_id ORDER BY qtd DESC LIMIT 5
+  `).all(dataInicio);
+
+  res.json({ periodo: dias, financeiro, porTipo, porStatus, porMes, eficiencia, topClientes, topVendedores });
+});
+
 // ── USUÁRIOS (admin) ──────────────────────────────────────────────
 app.get('/api/usuarios', authMiddleware, requireAdmin, (req, res) => {
   const usuarios = db.prepare('SELECT id, nome, email, perfil, setor, ativo, criado_em, ultimo_acesso FROM users ORDER BY nome').all();

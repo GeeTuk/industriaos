@@ -47,6 +47,7 @@ const api = {
   },
 
   dashboard: () => apiFetch('/dashboard'),
+  relatorios: (dias = 30) => apiFetch(`/relatorios?dias=${dias}`),
 
   usuarios: {
     listar: () => apiFetch('/usuarios'),

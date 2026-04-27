@@ -63,7 +63,20 @@ function filtrarPedidosPorEtapa(etapa) {
   carregarPedidos();
 }
 
+// Situação amigável para o vendedor repassar ao cliente
+function statusCliente(etapa, status) {
+  if (status === 'concluido') return '<span class="tag tag-green">✅ Entregue</span>';
+  if (status === 'cancelado') return '<span class="tag tag-gray">❌ Cancelado</span>';
+  if (etapa <= 2)  return '<span class="tag tag-gray">📝 Em orçamento</span>';
+  if (etapa === 3) return '<span class="tag tag-yellow">⏳ Ag. aprovação</span>';
+  if (etapa <= 7)  return '<span class="tag tag-blue">🏭 Em produção</span>';
+  if (etapa === 8) return '<span class="tag tag-orange">🚚 Pronto p/ envio</span>';
+  return '—';
+}
+
 function renderTabelaPedidos(pedidos) {
+  const isVendedor = currentUser.perfil === 'vendedor';
+
   const rows = pedidos.map(p => `
     <tr onclick="abrirFichaPedido(${p.id})" ${p.urgente ? 'style="border-left:3px solid var(--red)"' : ''}>
       <td>
@@ -73,7 +86,7 @@ function renderTabelaPedidos(pedidos) {
       <td>${tagTipo(p.tipo)}</td>
       <td>${p.cliente_nome || '<span style="color:var(--text3)">—</span>'}</td>
       <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.descricao || '—'}</td>
-      <td>${tagEtapa(p.etapa_atual)}</td>
+      <td>${isVendedor ? statusCliente(p.etapa_atual, p.status) : tagEtapa(p.etapa_atual)}</td>
       <td>${p.prazo ? `<span style="font-family:var(--font-mono);font-size:11px">${formatDateShort(p.prazo)}</span>` : '—'}</td>
       <td>${tagStatus(p.status)}</td>
       <td style="font-family:var(--font-mono);font-size:11px;color:var(--text3)">${formatDate(p.atualizado_em)}</td>
@@ -87,7 +100,11 @@ function renderTabelaPedidos(pedidos) {
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Código</th><th>Tipo</th><th>Cliente</th><th>Descrição</th><th>Etapa</th><th>Prazo</th><th>Status</th><th>Atualizado</th></tr></thead>
+          <thead><tr>
+            <th>Código</th><th>Tipo</th><th>Cliente</th><th>Descrição</th>
+            <th>${isVendedor ? 'Situação' : 'Etapa'}</th>
+            <th>Prazo</th><th>Status</th><th>Atualizado</th>
+          </tr></thead>
           <tbody>${rows || '<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">📋</div><div class="empty-text">Nenhum pedido encontrado</div></div></td></tr>'}</tbody>
         </table>
       </div>
