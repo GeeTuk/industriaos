@@ -65,11 +65,14 @@ function filtrarPedidosPorEtapa(etapa) {
 
 function renderTabelaPedidos(pedidos) {
   const rows = pedidos.map(p => `
-    <tr onclick="abrirFichaPedido(${p.id})">
-      <td><span style="font-family:var(--font-mono);font-size:12px;color:var(--accent)">${p.codigo}</span></td>
+    <tr onclick="abrirFichaPedido(${p.id})" ${p.urgente ? 'style="border-left:3px solid var(--red)"' : ''}>
+      <td>
+        <span style="font-family:var(--font-mono);font-size:12px;color:var(--accent)">${p.codigo}</span>
+        ${tagsBadges(p)}
+      </td>
       <td>${tagTipo(p.tipo)}</td>
       <td>${p.cliente_nome || '<span style="color:var(--text3)">—</span>'}</td>
-      <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.descricao || '—'}</td>
+      <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.descricao || '—'}</td>
       <td>${tagEtapa(p.etapa_atual)}</td>
       <td>${p.prazo ? `<span style="font-family:var(--font-mono);font-size:11px">${formatDateShort(p.prazo)}</span>` : '—'}</td>
       <td>${tagStatus(p.status)}</td>
@@ -286,6 +289,14 @@ async function abrirFichaPedido(id) {
             : ''}`
       }
 
+      ${pedido.urgente ? `<div class="urgente-banner">🔴 PEDIDO URGENTE</div>` : ''}
+      ${['admin','gerente_geral','vendedor'].includes(currentUser.perfil) ? `
+        <div style="margin-bottom:12px">
+          <button class="btn ${pedido.urgente ? 'btn-danger' : 'btn-ghost'} btn-sm" onclick="toggleUrgente(${pedido.id})">
+            ${pedido.urgente ? '🔴 Urgente — Clique para remover' : '+ Marcar como Urgente'}
+          </button>
+        </div>` : ''}
+
       ${obsDestaque}
 
       <div style="margin-bottom:16px">
@@ -496,6 +507,16 @@ function modalCancelarPedido(id, codigo) {
   abrirModal('Cancelar Pedido', body, footer);
 }
 
+async function toggleUrgente(id) {
+  try {
+    const res = await api.pedidos.toggleUrgente(id);
+    toast(res.mensagem, res.urgente ? 'error' : 'success');
+    fecharModalForce();
+    setTimeout(() => abrirFichaPedido(id), 200);
+    carregarPedidos();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
 async function confirmarCancelar(id) {
   const motivo = document.getElementById('cancel-motivo')?.value?.trim();
   if (!motivo) { toast('Informe o motivo do cancelamento', 'error'); return; }
@@ -529,6 +550,40 @@ async function confirmarExcluir(id) {
     fecharModalForce();
     carregarPedidos();
   } catch (e) { toast(e.message, 'error'); }
+}
+
+// ── BUSCA DE CLIENTES (searchable dropdown) ───────────────────────
+let _npClientes = [];
+
+function npFiltrarClientes() {
+  const q = (document.getElementById('np-cliente-search')?.value || '').toLowerCase();
+  const opts = document.getElementById('np-cliente-opts');
+  if (!opts) return;
+  const lista = q ? _npClientes.filter(c =>
+    c.razao_social.toLowerCase().includes(q) ||
+    (c.nome_fantasia || '').toLowerCase().includes(q) ||
+    (c.cnpj_cpf || '').includes(q)
+  ) : _npClientes;
+  opts.innerHTML =
+    `<div class="searchable-opt" onmousedown="npSelecionarCliente('','')">— Nenhum cliente —</div>` +
+    lista.map(c => `<div class="searchable-opt" onmousedown="npSelecionarCliente('${c.id}','${c.razao_social.replace(/'/g,"\\'")}')">
+      <span>${c.razao_social}</span>
+      ${c.nome_fantasia ? `<span style="color:var(--text3);font-size:11px;margin-left:6px">${c.nome_fantasia}</span>` : ''}
+    </div>`).join('');
+  opts.style.display = 'block';
+}
+
+function npFecharDropdownCliente() {
+  const opts = document.getElementById('np-cliente-opts');
+  if (opts) opts.style.display = 'none';
+}
+
+function npSelecionarCliente(id, nome) {
+  const inp = document.getElementById('np-cliente-search');
+  const hid = document.getElementById('np-cliente-id');
+  if (inp) inp.value = nome || '';
+  if (hid) hid.value = id || '';
+  npFecharDropdownCliente();
 }
 
 // ── CATÁLOGOS ─────────────────────────────────────────────────────
@@ -589,15 +644,9 @@ async function npCriarCliente() {
   };
   try {
     const res = await api.clientes.criar(dados);
-    // Adiciona o novo cliente ao select e o seleciona
-    const sel = document.getElementById('np-cliente');
-    if (sel) {
-      const opt = document.createElement('option');
-      opt.value = res.id;
-      opt.textContent = razao;
-      opt.selected = true;
-      sel.appendChild(opt);
-    }
+    // Adiciona ao cache e seleciona no searchable dropdown
+    _npClientes.push({ id: res.id, razao_social: razao, nome_fantasia: dados.nome_fantasia });
+    npSelecionarCliente(String(res.id), razao);
     toast(`Cliente "${razao}" criado e selecionado!`, 'success');
     npToggleNovoCliente();
   } catch (e) { toast(e.message, 'error'); }
@@ -607,7 +656,7 @@ async function npCriarCliente() {
 async function modalNovoPedido() {
   let clientes = [];
   try { clientes = await api.clientes.listar(); } catch {}
-  const clienteOpts = clientes.map(c => `<option value="${c.id}">${c.razao_social}</option>`).join('');
+  _npClientes = clientes; // store for searchable dropdown
 
   const coresCheckboxes = NP_CORES.map(c =>
     `<label class="checkbox-row" style="min-width:130px"><input type="checkbox" class="np-cor-check" value="${c}"> ${c}</label>`
@@ -632,10 +681,15 @@ async function modalNovoPedido() {
       <div class="form-group">
         <label>Cliente</label>
         <div style="display:flex;gap:8px;align-items:center">
-          <select id="np-cliente" style="flex:1">
-            <option value="">— Selecionar —</option>
-            ${clienteOpts}
-          </select>
+          <div class="searchable-select-wrap" style="flex:1">
+            <input type="text" id="np-cliente-search" placeholder="🔍 Buscar cliente pelo nome ou CNPJ..."
+              autocomplete="off"
+              oninput="npFiltrarClientes()"
+              onfocus="npFiltrarClientes()"
+              onblur="setTimeout(npFecharDropdownCliente, 150)">
+            <input type="hidden" id="np-cliente-id">
+            <div class="searchable-opts" id="np-cliente-opts" style="display:none"></div>
+          </div>
           <button type="button" class="btn btn-ghost btn-sm" onclick="npToggleNovoCliente()" style="white-space:nowrap;flex-shrink:0">+ Novo Cliente</button>
         </div>
       </div>
@@ -736,7 +790,7 @@ async function confirmarNovoPedido() {
   const dados = {
     tipo,
     categoria: cats.length ? document.getElementById('np-categoria')?.value : null,
-    cliente_id: document.getElementById('np-cliente').value || null,
+    cliente_id: document.getElementById('np-cliente-id')?.value || null,
     descricao: document.getElementById('np-descricao').value.trim(),
     dimensoes: document.getElementById('np-dimensoes').value,
     material: document.getElementById('np-material').value,

@@ -73,6 +73,7 @@ function initDb() {
       corte_ok INTEGER DEFAULT 0,
       impressao_ok INTEGER DEFAULT 0,
       categoria TEXT,
+      urgente INTEGER DEFAULT 0,
       transportadora TEXT,
       codigo_rastreio TEXT,
       vendedor_id INTEGER REFERENCES users(id),
@@ -103,6 +104,22 @@ function initDb() {
       destino TEXT,
       user_id INTEGER REFERENCES users(id),
       criado_em TEXT DEFAULT (datetime('now'))
+    );
+
+    -- Pedidos de Suprimentos
+    CREATE TABLE IF NOT EXISTS suprimentos (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      etapa INTEGER NOT NULL,
+      perfil TEXT NOT NULL,
+      categoria TEXT NOT NULL,
+      descricao TEXT NOT NULL,
+      quantidade TEXT,
+      status TEXT NOT NULL DEFAULT 'pendente',
+      user_id INTEGER REFERENCES users(id),
+      respondido_por INTEGER REFERENCES users(id),
+      resposta TEXT,
+      criado_em TEXT DEFAULT (CURRENT_TIMESTAMP),
+      atualizado_em TEXT DEFAULT (CURRENT_TIMESTAMP)
     );
 
     -- Log de auditoria
@@ -164,6 +181,7 @@ function initDb() {
     'ALTER TABLE pedidos ADD COLUMN categoria TEXT',
     'ALTER TABLE pedidos ADD COLUMN transportadora TEXT',
     'ALTER TABLE pedidos ADD COLUMN codigo_rastreio TEXT',
+    'ALTER TABLE pedidos ADD COLUMN urgente INTEGER DEFAULT 0',
     'ALTER TABLE clientes ADD COLUMN ie TEXT',
     'ALTER TABLE clientes ADD COLUMN im TEXT',
     'ALTER TABLE arquivos ADD COLUMN destino TEXT',

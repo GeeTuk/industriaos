@@ -506,6 +506,95 @@ tbody td { padding: 11px 14px; font-size: 13px; }
 #lightbox-close:hover { background: rgba(255,255,255,0.25); }
 @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
 
+/* ── URGÊNCIA / PRAZO BADGES ───────────────────────────────────── */
+.badge-urgente {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: var(--red-dim);
+  color: var(--red);
+  border: 1px solid rgba(245,60,60,0.3);
+  font-family: var(--font-mono);
+  letter-spacing: 0.04em;
+  vertical-align: middle;
+}
+.badge-prazo {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: var(--orange-dim);
+  color: var(--orange);
+  border: 1px solid rgba(245,164,60,0.3);
+  font-family: var(--font-mono);
+  letter-spacing: 0.04em;
+  vertical-align: middle;
+}
+.badge-vencido {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: var(--red-dim);
+  color: var(--red);
+  border: 1px solid rgba(245,60,60,0.3);
+  font-family: var(--font-mono);
+  letter-spacing: 0.04em;
+  vertical-align: middle;
+}
+.urgente-banner {
+  background: var(--red-dim);
+  border: 1px solid rgba(245,60,60,0.4);
+  color: var(--red);
+  font-weight: 700;
+  font-size: 13px;
+  padding: 10px 16px;
+  border-radius: var(--radius);
+  margin-bottom: 12px;
+  text-align: center;
+  letter-spacing: 0.05em;
+}
+.fila-card-urgente {
+  border-color: rgba(245,60,60,0.5) !important;
+  box-shadow: 0 0 0 1px rgba(245,60,60,0.3);
+}
+
+/* ── SEARCHABLE DROPDOWN ───────────────────────────────────────── */
+.searchable-select-wrap { position: relative; }
+.searchable-opts {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius);
+  max-height: 220px;
+  overflow-y: auto;
+  z-index: 500;
+  box-shadow: var(--shadow);
+}
+.searchable-opt {
+  padding: 9px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.searchable-opt:last-child { border-bottom: none; }
+.searchable-opt:hover { background: var(--accent-dim); color: var(--accent); }
+
 /* ── HERO / CAPA DO PEDIDO ─────────────────────────────────────── */
 .pedido-hero {
   width: calc(100% + 48px);

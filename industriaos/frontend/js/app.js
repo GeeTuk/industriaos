@@ -91,12 +91,13 @@ function mostrarApp() {
 
 // ── NAVIGATION ────────────────────────────────────────────────────
 const PAGES = [
-  { id: 'dashboard', label: 'Dashboard', icon: '⬡', section: 'Principal', perfis: 'all' },
-  { id: 'pedidos', label: 'Pedidos', icon: '◈', section: 'Produção', perfis: 'all' },
-  { id: 'fila', label: 'Minha Fila', icon: '▷', section: 'Produção', perfis: ['vendedor','designer','moldes','impressao','corte','costura','motor','expedicao','operador'] },
-  { id: 'clientes', label: 'Clientes', icon: '◎', section: 'Comercial', perfis: ['admin','gerente_geral','vendedor'] },
-  { id: 'usuarios', label: 'Usuários', icon: '○', section: 'Administração', perfis: ['admin'] },
-  { id: 'auditoria', label: 'Auditoria', icon: '◉', section: 'Administração', perfis: ['admin'] },
+  { id: 'dashboard',    label: 'Dashboard',           icon: '⬡', section: 'Principal',      perfis: 'all' },
+  { id: 'pedidos',      label: 'Pedidos',              icon: '◈', section: 'Produção',       perfis: 'all' },
+  { id: 'fila',         label: 'Minha Fila',           icon: '▷', section: 'Produção',       perfis: ['vendedor','designer','moldes','impressao','corte','costura','motor','expedicao','operador'] },
+  { id: 'suprimentos',  label: 'Pedidos de Suprimentos', icon: '◧', section: 'Operacional', perfis: ['admin','gerente_geral','impressao','corte','costura','motor','expedicao'] },
+  { id: 'clientes',     label: 'Clientes',             icon: '◎', section: 'Comercial',      perfis: ['admin','gerente_geral','vendedor'] },
+  { id: 'usuarios',     label: 'Usuários',             icon: '○', section: 'Administração',  perfis: ['admin'] },
+  { id: 'auditoria',    label: 'Auditoria',            icon: '◉', section: 'Administração',  perfis: ['admin'] },
 ];
 
 function buildNav() {
@@ -143,6 +144,7 @@ function navigate(page, params = {}) {
     case 'fila': renderFila(); break;
     case 'clientes': renderClientes(); break;
     case 'usuarios': renderUsuarios(); break;
+    case 'suprimentos': renderSuprimentos(); break;
     case 'auditoria': renderAuditoria(); break;
     default: content.innerHTML = '<div class="empty-state"><div class="empty-icon">🚧</div><div class="empty-text">Página em construção</div></div>';
   }
@@ -237,6 +239,78 @@ function formatMoney(v) {
   return Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
+// ── URGÊNCIA / PRAZO HELPERS ──────────────────────────────────────
+function diasAtePrazo(prazo) {
+  if (!prazo) return null;
+  return Math.ceil((new Date(prazo) - new Date()) / 86400000);
+}
+
+function tagsBadges(p) {
+  let h = '';
+  if (p.urgente) h += `<span class="badge-urgente">🔴 URGENTE</span>`;
+  if (p.prazo && p.status === 'ativo') {
+    const d = diasAtePrazo(p.prazo);
+    if (d !== null) {
+      if (d < 0)      h += `<span class="badge-vencido">⚠ VENCIDO</span>`;
+      else if (d === 0) h += `<span class="badge-prazo">⚠ HOJE</span>`;
+      else if (d <= 3)  h += `<span class="badge-prazo">⚠ ${d}d</span>`;
+    }
+  }
+  return h;
+}
+
+// ── SUPRIMENTOS: categorias por perfil ───────────────────────────
+const SUPRIMENTO_CATS = {
+  impressao: ['Tinta Solvente','Tinta UV','Mídia / Vinil','Solvente de Limpeza','Cabeça de Impressão','Outros'],
+  corte:     ['Lâmina de Corte','Estilete / Bisturi','Fita de Borda','Ferramenta de Corte','Outros'],
+  costura:   ['Linha de Costura','Agulha','Velcro','Zíper','Fita de Borda','Elástico','Outros'],
+  motor:     ['Componente de Motor','Cola / Adesivo','Ferramenta Elétrica','Cabo / Fio','Parafuso / Porca','Outros'],
+  expedicao: ['Caixa de Embalagem','Fita Adesiva','Lacre / Selo','Etiqueta','Outros'],
+  default:   ['Material de Escritório','EPI / Segurança','Produto de Limpeza','Ferramentas','Outros'],
+};
+
+function modalSolicitarSuprimento() {
+  const cats = SUPRIMENTO_CATS[currentUser.perfil] || SUPRIMENTO_CATS.default;
+  const catOpts = cats.map(c => `<option value="${c}">${c}</option>`).join('');
+  const body = `
+    <div class="form-grid cols1" style="gap:14px">
+      <div class="form-group">
+        <label>Categoria *</label>
+        <select id="sup-categoria">${catOpts}</select>
+      </div>
+      <div class="form-group">
+        <label>Descrição do que precisa *</label>
+        <textarea id="sup-descricao" placeholder="Ex: Tinta Solvente Magenta, 1 litro, refil para ploter HP..."></textarea>
+      </div>
+      <div class="form-group">
+        <label>Quantidade</label>
+        <input type="text" id="sup-qtd" placeholder="Ex: 2 litros, 5 caixas, 3 bobinas...">
+      </div>
+    </div>
+  `;
+  const footer = `
+    <button class="btn btn-ghost" onclick="fecharModalForce()">Cancelar</button>
+    <button class="btn btn-primary" onclick="confirmarSolicitarSuprimento()">Enviar Pedido</button>
+  `;
+  abrirModal('Solicitar Suprimento', body, footer);
+}
+
+async function confirmarSolicitarSuprimento() {
+  const categoria = document.getElementById('sup-categoria')?.value;
+  const descricao = document.getElementById('sup-descricao')?.value?.trim();
+  const quantidade = document.getElementById('sup-qtd')?.value?.trim();
+  if (!descricao) { toast('Descreva o que precisa', 'error'); return; }
+  try {
+    await api.suprimentos.criar({
+      etapa: currentUser.etapasOperar?.[0] || 0,
+      perfil: currentUser.perfil,
+      categoria, descricao, quantidade
+    });
+    toast('Pedido de suprimento enviado!', 'success');
+    fecharModalForce();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
 // Fila page com abas por etapa
 async function renderFila() {
   try {
@@ -244,6 +318,13 @@ async function renderFila() {
     if (etapasOperar.length === 0) {
       document.getElementById('content').innerHTML = '<div class="empty-state"><div class="empty-icon">🔒</div><div class="empty-text">Sem etapas configuradas para seu perfil.<br>Fale com o administrador.</div></div>';
       return;
+    }
+
+    // Botão de suprimento para perfis de produção
+    const podeSuprimento = ['impressao','corte','costura','motor','expedicao','admin','gerente_geral'].includes(currentUser.perfil);
+    if (podeSuprimento) {
+      document.getElementById('topbar-actions').innerHTML =
+        `<button class="btn btn-primary btn-sm" onclick="modalSolicitarSuprimento()">📦 Solicitar Suprimento</button>`;
     }
 
     const pedidos = await api.pedidos.listar();
@@ -292,10 +373,11 @@ function _renderFilaCards(pedidos, etapa) {
   }
 
   const cards = lista.map(p => `
-    <div class="fila-card" onclick="abrirFichaPedido(${p.id})">
+    <div class="fila-card ${p.urgente ? 'fila-card-urgente' : ''}" onclick="abrirFichaPedido(${p.id})">
       <div class="fila-card-header">
         <span class="fila-codigo">${p.codigo}</span>
         ${tagTipo(p.tipo)}
+        ${tagsBadges(p)}
       </div>
       <div class="fila-card-body">
         <div class="fila-cliente">${p.cliente_nome || 'Sem cliente'}</div>

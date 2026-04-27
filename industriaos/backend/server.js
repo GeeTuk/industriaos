@@ -312,6 +312,23 @@ app.put('/api/pedidos/:id', authMiddleware, (req, res) => {
   res.json({ mensagem: 'Pedido atualizado' });
 });
 
+// Marcar/desmarcar urgente
+app.post('/api/pedidos/:id/urgente', authMiddleware, (req, res) => {
+  const pedido = db.prepare('SELECT * FROM pedidos WHERE id = ?').get(req.params.id);
+  if (!pedido) return res.status(404).json({ erro: 'Pedido não encontrado' });
+
+  const podeMarcar = ['admin','gerente_geral','vendedor'].includes(req.user.perfil);
+  if (!podeMarcar) return res.status(403).json({ erro: 'Sem permissão' });
+
+  const novoValor = pedido.urgente ? 0 : 1;
+  db.prepare('UPDATE pedidos SET urgente = ?, atualizado_em = CURRENT_TIMESTAMP WHERE id = ?').run(novoValor, pedido.id);
+  db.prepare('INSERT INTO historico (pedido_id, user_id, tipo, etapa_de, etapa_para, descricao) VALUES (?, ?, ?, ?, ?, ?)').run(
+    pedido.id, req.user.id, 'edicao', pedido.etapa_atual, pedido.etapa_atual,
+    novoValor ? `🔴 Pedido marcado como URGENTE por ${req.user.nome}` : `Urgência removida por ${req.user.nome}`
+  );
+  res.json({ urgente: novoValor, mensagem: novoValor ? 'Marcado como urgente' : 'Urgência removida' });
+});
+
 // Cancelar pedido
 app.post('/api/pedidos/:id/cancelar', authMiddleware, (req, res) => {
   const { motivo } = req.body;
@@ -454,6 +471,39 @@ app.get('/api/arquivos/:id/download', authMiddleware, (req, res) => {
   res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(arquivo.nome)}"`);
   res.setHeader('Content-Type', arquivo.tipo || 'application/octet-stream');
   res.sendFile(filePath);
+});
+
+// ── SUPRIMENTOS ───────────────────────────────────────────────────
+app.get('/api/suprimentos', authMiddleware, (req, res) => {
+  const isGerente = ['admin','gerente_geral'].includes(req.user.perfil);
+  const rows = isGerente
+    ? db.prepare(`SELECT s.*, u.nome as solicitante_nome, u2.nome as respondido_nome
+        FROM suprimentos s
+        LEFT JOIN users u ON s.user_id = u.id
+        LEFT JOIN users u2 ON s.respondido_por = u2.id
+        ORDER BY s.criado_em DESC`).all()
+    : db.prepare(`SELECT s.*, u.nome as solicitante_nome, u2.nome as respondido_nome
+        FROM suprimentos s
+        LEFT JOIN users u ON s.user_id = u.id
+        LEFT JOIN users u2 ON s.respondido_por = u2.id
+        WHERE s.user_id = ?
+        ORDER BY s.criado_em DESC`).all(req.user.id);
+  res.json(rows);
+});
+
+app.post('/api/suprimentos', authMiddleware, (req, res) => {
+  const { etapa, perfil, categoria, descricao, quantidade } = req.body;
+  if (!categoria || !descricao) return res.status(400).json({ erro: 'Categoria e descrição obrigatórias' });
+  const r = db.prepare(`INSERT INTO suprimentos (etapa, perfil, categoria, descricao, quantidade, user_id) VALUES (?, ?, ?, ?, ?, ?)`)
+    .run(etapa || req.user.etapa || 0, perfil || req.user.perfil, categoria, descricao, quantidade || null, req.user.id);
+  res.json({ id: r.lastInsertRowid, mensagem: 'Pedido de suprimento registrado' });
+});
+
+app.patch('/api/suprimentos/:id', authMiddleware, requireGerente, (req, res) => {
+  const { status, resposta } = req.body;
+  db.prepare(`UPDATE suprimentos SET status = ?, resposta = ?, respondido_por = ?, atualizado_em = CURRENT_TIMESTAMP WHERE id = ?`)
+    .run(status, resposta || null, req.user.id, req.params.id);
+  res.json({ mensagem: 'Suprimento atualizado' });
 });
 
 // ── ETAPAS INFO ───────────────────────────────────────────────────

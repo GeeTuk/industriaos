@@ -37,6 +37,13 @@ const api = {
     devolver: (id, data) => apiFetch(`/pedidos/${id}/devolver`, { method: 'POST', body: JSON.stringify(data) }),
     cancelar: (id, motivo) => apiFetch(`/pedidos/${id}/cancelar`, { method: 'POST', body: JSON.stringify({ motivo }) }),
     deletar: (id) => apiFetch(`/pedidos/${id}`, { method: 'DELETE' }),
+    toggleUrgente: (id) => apiFetch(`/pedidos/${id}/urgente`, { method: 'POST' }),
+  },
+
+  suprimentos: {
+    listar: () => apiFetch('/suprimentos'),
+    criar: (d) => apiFetch('/suprimentos', { method: 'POST', body: JSON.stringify(d) }),
+    atualizar: (id, d) => apiFetch(`/suprimentos/${id}`, { method: 'PATCH', body: JSON.stringify(d) }),
   },
 
   dashboard: () => apiFetch('/dashboard'),
