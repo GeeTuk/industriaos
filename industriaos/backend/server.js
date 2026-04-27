@@ -364,6 +364,10 @@ app.delete('/api/pedidos/:id', authMiddleware, requireAdmin, (req, res) => {
 
 // ── DASHBOARD / MÉTRICAS ──────────────────────────────────────────
 app.get('/api/dashboard', authMiddleware, (req, res) => {
+  const hoje = new Date().toISOString().split('T')[0];
+  const em3dias = new Date(Date.now() + 3 * 86400000).toISOString().split('T')[0];
+
+  // ── Pipeline por etapa ──
   const porEtapa = [];
   for (let e = 1; e <= 8; e++) {
     if (!podeVerEtapa(req.user, e, db)) continue;
@@ -371,17 +375,88 @@ app.get('/api/dashboard', authMiddleware, (req, res) => {
     porEtapa.push({ etapa: e, nome: ETAPAS[e]?.nome, total: count.c });
   }
 
+  // ── Contadores globais ──
+  const totalAtivos    = db.prepare(`SELECT COUNT(*) as c FROM pedidos WHERE status = 'ativo'`).get().c;
+  const totalClientes  = db.prepare(`SELECT COUNT(*) as c FROM clientes WHERE status = 'ativo'`).get().c;
+  const totalUsuarios  = db.prepare('SELECT COUNT(*) as c FROM users WHERE ativo = 1').get().c;
+  const totalUrgentes  = db.prepare(`SELECT COUNT(*) as c FROM pedidos WHERE urgente = 1 AND status = 'ativo'`).get().c;
+  const totalVencidos  = db.prepare(`SELECT COUNT(*) as c FROM pedidos WHERE prazo < ? AND status = 'ativo'`).get(hoje).c;
+  const totalPrazoProx = db.prepare(`SELECT COUNT(*) as c FROM pedidos WHERE prazo BETWEEN ? AND ? AND status = 'ativo'`).get(hoje, em3dias).c;
+  const supPendentes   = db.prepare(`SELECT COUNT(*) as c FROM suprimentos WHERE status = 'pendente'`).get().c;
+
+  // ── Listas de alertas (admin/gerente) ──
+  const urgentes = db.prepare(`
+    SELECT p.id, p.codigo, p.tipo, p.etapa_atual, p.prazo, c.razao_social as cliente_nome
+    FROM pedidos p LEFT JOIN clientes c ON p.cliente_id = c.id
+    WHERE p.urgente = 1 AND p.status = 'ativo'
+    ORDER BY p.prazo ASC LIMIT 6
+  `).all();
+
+  const prazoProximo = db.prepare(`
+    SELECT p.id, p.codigo, p.tipo, p.etapa_atual, p.prazo, p.urgente, c.razao_social as cliente_nome
+    FROM pedidos p LEFT JOIN clientes c ON p.cliente_id = c.id
+    WHERE p.prazo BETWEEN ? AND ? AND p.status = 'ativo'
+    ORDER BY p.prazo ASC LIMIT 6
+  `).all(hoje, em3dias);
+
+  // ── Recentes (com id e urgente) ──
   const recentes = db.prepare(`
-    SELECT p.codigo, p.tipo, p.etapa_atual, p.atualizado_em, c.razao_social as cliente_nome
+    SELECT p.id, p.codigo, p.tipo, p.etapa_atual, p.atualizado_em, p.urgente, p.prazo,
+           c.razao_social as cliente_nome
     FROM pedidos p LEFT JOIN clientes c ON p.cliente_id = c.id
     WHERE p.status = 'ativo' ORDER BY p.atualizado_em DESC LIMIT 8
   `).all();
 
-  const totalAtivos = db.prepare(`SELECT COUNT(*) as c FROM pedidos WHERE status = 'ativo'`).get().c;
-  const totalClientes = db.prepare(`SELECT COUNT(*) as c FROM clientes WHERE status = 'ativo'`).get().c;
-  const totalUsuarios = db.prepare('SELECT COUNT(*) as c FROM users WHERE ativo = 1').get().c;
+  // ── Meus pedidos (vendedor) ──
+  let meusPedidos = null;
+  if (req.user.perfil === 'vendedor') {
+    const total = db.prepare(`SELECT COUNT(*) as c FROM pedidos WHERE vendedor_id = ? AND status = 'ativo'`).get(req.user.id).c;
+    const aguardando = db.prepare(`SELECT COUNT(*) as c FROM pedidos WHERE vendedor_id = ? AND etapa_atual = 3 AND status = 'ativo'`).get(req.user.id).c;
+    const urgs = db.prepare(`SELECT COUNT(*) as c FROM pedidos WHERE vendedor_id = ? AND urgente = 1 AND status = 'ativo'`).get(req.user.id).c;
+    const concluidos = db.prepare(`SELECT COUNT(*) as c FROM pedidos WHERE vendedor_id = ? AND status = 'concluido'`).get(req.user.id).c;
+    const lista = db.prepare(`
+      SELECT p.id, p.codigo, p.tipo, p.etapa_atual, p.prazo, p.urgente, c.razao_social as cliente_nome
+      FROM pedidos p LEFT JOIN clientes c ON p.cliente_id = c.id
+      WHERE p.vendedor_id = ? AND p.status = 'ativo'
+      ORDER BY p.urgente DESC, CASE WHEN p.prazo IS NULL THEN 1 ELSE 0 END, p.prazo ASC
+      LIMIT 10
+    `).all(req.user.id);
+    meusPedidos = { total, aguardando, urgentes: urgs, concluidos, lista };
+  }
 
-  res.json({ porEtapa, recentes, totalAtivos, totalClientes, totalUsuarios, etapas: ETAPAS });
+  // ── Minha fila (produção / designer) ──
+  let minhaFila = null;
+  const perfisProd = ['impressao','corte','costura','motor','expedicao','designer','moldes'];
+  if (perfisProd.includes(req.user.perfil)) {
+    const etapasOperar = [];
+    for (let e = 1; e <= 8; e++) {
+      if (podeOperarEtapa(req.user, e, db)) etapasOperar.push(e);
+    }
+    if (etapasOperar.length > 0) {
+      const inCl = etapasOperar.join(',');
+      const total = db.prepare(`SELECT COUNT(*) as c FROM pedidos WHERE etapa_atual IN (${inCl}) AND status = 'ativo'`).get().c;
+      const urgs  = db.prepare(`SELECT COUNT(*) as c FROM pedidos WHERE etapa_atual IN (${inCl}) AND urgente = 1 AND status = 'ativo'`).get().c;
+      const lista = db.prepare(`
+        SELECT p.id, p.codigo, p.tipo, p.etapa_atual, p.prazo, p.urgente,
+               p.corte_ok, p.impressao_ok, c.razao_social as cliente_nome
+        FROM pedidos p LEFT JOIN clientes c ON p.cliente_id = c.id
+        WHERE p.etapa_atual IN (${inCl}) AND p.status = 'ativo'
+        ORDER BY p.urgente DESC, CASE WHEN p.prazo IS NULL THEN 1 ELSE 0 END, p.prazo ASC
+        LIMIT 8
+      `).all();
+      const etapasObjs = etapasOperar.map(e => {
+        const cnt = db.prepare(`SELECT COUNT(*) as c FROM pedidos WHERE etapa_atual = ? AND status = 'ativo'`).get(e);
+        return { etapa: e, nome: ETAPAS[e]?.nome, total: cnt.c };
+      });
+      minhaFila = { total, urgentes: urgs, etapas: etapasObjs, lista };
+    }
+  }
+
+  res.json({
+    porEtapa, recentes, totalAtivos, totalClientes, totalUsuarios,
+    totalUrgentes, totalVencidos, totalPrazoProx, supPendentes,
+    urgentes, prazoProximo, meusPedidos, minhaFila, etapas: ETAPAS
+  });
 });
 
 // ── USUÁRIOS (admin) ──────────────────────────────────────────────
