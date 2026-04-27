@@ -86,6 +86,12 @@
     </div>
   </div>
 
+  <!-- Lightbox de imagem -->
+  <div id="lightbox" style="display:none" onclick="fecharLightbox()">
+    <button id="lightbox-close" onclick="fecharLightbox()">✕</button>
+    <img id="lightbox-img" src="" alt="Imagem ampliada" onclick="event.stopPropagation()">
+  </div>
+
   <div class="toast-container" id="toasts"></div>
   <div class="modal-overlay" id="modal-overlay" onclick="fecharModal(event)">
     <div class="modal" id="modal-box">

@@ -172,6 +172,27 @@ function fecharModalForce() {
   document.getElementById('modal-overlay').classList.remove('open');
 }
 
+// ── LIGHTBOX ──────────────────────────────────────────────────────
+function abrirLightbox(url) {
+  const lb = document.getElementById('lightbox');
+  const img = document.getElementById('lightbox-img');
+  if (!lb || !img) return;
+  img.src = url;
+  lb.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+}
+
+function fecharLightbox() {
+  const lb = document.getElementById('lightbox');
+  if (lb) lb.style.display = 'none';
+  document.body.style.overflow = '';
+}
+
+// Fechar lightbox com ESC
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') fecharLightbox();
+});
+
 // ── TOASTS ────────────────────────────────────────────────────────
 function toast(msg, tipo = 'info', dur = 3500) {
   const container = document.getElementById('toasts');

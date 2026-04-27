@@ -195,23 +195,41 @@ async function abrirFichaPedido(id) {
         </div>
       </div>` : '';
 
-    // Filtrar arquivos por visibilidade
+    // Filtrar arquivos por visibilidade + excluir capa dos anexos
     const arquivosVisiveis = (pedido.arquivos || []).filter(a => {
+      if (a.id === capaArquivo?.id) return false; // capa fica só no hero, não nos anexos
       if (isAdmin) return true;
-      if (a.etapa === 3) return true; // capa/aprovação: todos veem
-      if (a.etapa === 4) return currentUser.etapasVisiveis?.includes(5); // arte: só impressão vê
+      if (a.etapa === 3) return true; // aprovação: todos veem
+      if (a.etapa === 4) {
+        // Arte: arquivos separados por destino
+        if (a.destino === 'impressao') return ['impressao','admin','gerente_geral'].includes(currentUser.perfil);
+        if (a.destino === 'corte_costura') return ['corte','costura','admin','gerente_geral'].includes(currentUser.perfil);
+        return currentUser.etapasVisiveis?.includes(5); // sem destino → só impressão (legado)
+      }
       return currentUser.etapasVisiveis?.includes(a.etapa);
     });
 
     const arquivosHtml = arquivosVisiveis.length
       ? arquivosVisiveis.map(a => {
           const isImg = /\.(jpg|jpeg|png|gif|webp)$/i.test(a.nome);
+          const destinoBadge = a.destino === 'impressao'
+            ? `<span class="arquivo-destino-badge destino-impressao">Impressão</span>`
+            : a.destino === 'corte_costura'
+            ? `<span class="arquivo-destino-badge destino-corte">Corte/Costura</span>`
+            : '';
           return `
             <div class="arquivo-item">
               <span class="arquivo-icon">${isImg ? '🖼' : '📄'}</span>
               <div class="arquivo-info">
-                <a href="${api.arquivos.url(a.id)}" target="_blank" class="arquivo-nome">${a.nome}</a>
+                <span class="arquivo-nome">${a.nome}</span>
                 <div class="arquivo-meta">Etapa: ${ETAPAS_NOMES[a.etapa] || a.etapa} · ${formatDate(a.criado_em)}</div>
+              </div>
+              ${destinoBadge}
+              <div class="arquivo-acoes">
+                ${isImg
+                  ? `<button onclick="abrirLightbox('${api.arquivos.url(a.id)}')">🔍 Ver</button>`
+                  : `<a href="${api.arquivos.url(a.id)}" target="_blank">↗ Abrir</a>`}
+                <a href="${api.arquivos.downloadUrl(a.id)}">⬇ Baixar</a>
               </div>
             </div>`;
         }).join('')
@@ -233,8 +251,8 @@ async function abrirFichaPedido(id) {
 
     const body = `
       ${capaArquivo
-        ? `<div class="pedido-hero" style="background-image:url('${api.arquivos.url(capaArquivo.id)}')">
-            <div class="pedido-hero-overlay">
+        ? `<div class="pedido-hero" style="background-image:url('${api.arquivos.url(capaArquivo.id)}');cursor:zoom-in" onclick="abrirLightbox('${api.arquivos.url(capaArquivo.id)}')">
+            <div class="pedido-hero-overlay" onclick="event.stopPropagation()">
               <div class="pedido-hero-info">
                 <div class="pedido-codigo" style="font-size:20px">${pedido.codigo}</div>
                 <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
@@ -245,7 +263,7 @@ async function abrirFichaPedido(id) {
               </div>
               <div class="pedido-actions">${acoes}</div>
             </div>
-            <button class="capa-ampliar-btn" onclick="window.open('${api.arquivos.url(capaArquivo.id)}')" title="Ampliar imagem">⤢</button>
+            <button class="capa-ampliar-btn" onclick="event.stopPropagation();abrirLightbox('${api.arquivos.url(capaArquivo.id)}')" title="Ampliar imagem">⤢</button>
           </div>`
         : `<div class="pedido-header">
             <div>
@@ -303,12 +321,25 @@ async function abrirFichaPedido(id) {
       </div>` : ''}
 
       <hr class="divider">
-      <div class="section-label" style="display:flex;justify-content:space-between;align-items:center">
+      <div class="section-label" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
         <span>Arquivos</span>
-        ${canOperar || isAdmin ? `<label class="btn btn-ghost btn-sm" style="cursor:pointer;font-size:12px;font-weight:normal">
-          + Anexar
-          <input type="file" hidden onchange="uploadArquivo(${pedido.id}, this)" accept="image/*,.pdf,.ai,.eps,.psd,.zip,.rar">
-        </label>` : ''}
+        ${(canOperar || isAdmin) ? (
+          pedido.etapa_atual === 4
+            ? `<div style="display:flex;gap:6px">
+                <label class="btn btn-ghost btn-sm" style="cursor:pointer;font-size:11px;font-weight:normal;color:var(--blue)" title="Arquivo visível apenas para Impressão">
+                  🖨 Para Impressão
+                  <input type="file" hidden onchange="uploadArquivo(${pedido.id}, this, 'impressao')" accept="image/*,.pdf,.ai,.eps,.psd,.zip,.rar">
+                </label>
+                <label class="btn btn-ghost btn-sm" style="cursor:pointer;font-size:11px;font-weight:normal;color:var(--orange)" title="Arquivo visível para Corte e Costura">
+                  ✂ Para Corte/Costura
+                  <input type="file" hidden onchange="uploadArquivo(${pedido.id}, this, 'corte_costura')" accept="image/*,.pdf,.ai,.eps,.psd,.zip,.rar">
+                </label>
+              </div>`
+            : `<label class="btn btn-ghost btn-sm" style="cursor:pointer;font-size:12px;font-weight:normal">
+                + Anexar
+                <input type="file" hidden onchange="uploadArquivo(${pedido.id}, this)" accept="image/*,.pdf,.ai,.eps,.psd,.zip,.rar">
+              </label>`
+        ) : ''}
       </div>
       <div id="arquivos-list-${pedido.id}">${arquivosHtml}</div>
 
@@ -324,14 +355,14 @@ async function abrirFichaPedido(id) {
 }
 
 // ── UPLOAD DE ARQUIVO ─────────────────────────────────────────────
-async function uploadArquivo(pedidoId, input) {
+async function uploadArquivo(pedidoId, input, destino = null) {
   const file = input.files[0];
   if (!file) return;
   const formData = new FormData();
   formData.append('arquivo', file);
   try {
     toast('Enviando arquivo...', 'info');
-    await api.arquivos.upload(pedidoId, formData);
+    await api.arquivos.upload(pedidoId, formData, destino);
     toast('Arquivo enviado!', 'success');
     fecharModalForce();
     setTimeout(() => abrirFichaPedido(pedidoId), 300);

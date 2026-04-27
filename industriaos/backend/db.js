@@ -100,6 +100,7 @@ function initDb() {
       caminho TEXT NOT NULL,
       tipo TEXT,
       etapa INTEGER,
+      destino TEXT,
       user_id INTEGER REFERENCES users(id),
       criado_em TEXT DEFAULT (datetime('now'))
     );
@@ -165,6 +166,7 @@ function initDb() {
     'ALTER TABLE pedidos ADD COLUMN codigo_rastreio TEXT',
     'ALTER TABLE clientes ADD COLUMN ie TEXT',
     'ALTER TABLE clientes ADD COLUMN im TEXT',
+    'ALTER TABLE arquivos ADD COLUMN destino TEXT',
   ];
   for (const m of migrations) {
     try { db.exec(m); } catch (_) { /* coluna já existe */ }

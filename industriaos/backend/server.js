@@ -425,19 +425,33 @@ app.post('/api/pedidos/:id/arquivos', authMiddleware, upload.single('arquivo'), 
   if (!req.file) return res.status(400).json({ erro: 'Nenhum arquivo enviado' });
   const pedido = db.prepare('SELECT * FROM pedidos WHERE id = ?').get(req.params.id);
   if (!pedido) return res.status(404).json({ erro: 'Pedido não encontrado' });
-  const r = db.prepare(`INSERT INTO arquivos (pedido_id, nome, caminho, tipo, etapa, user_id) VALUES (?, ?, ?, ?, ?, ?)`)
-    .run(pedido.id, req.file.originalname, req.file.filename, req.file.mimetype, pedido.etapa_atual, req.user.id);
+  const destino = req.query.destino || null; // 'impressao', 'corte_costura', ou null
+  const r = db.prepare(`INSERT INTO arquivos (pedido_id, nome, caminho, tipo, etapa, destino, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+    .run(pedido.id, req.file.originalname, req.file.filename, req.file.mimetype, pedido.etapa_atual, destino, req.user.id);
+  const destinoLabel = destino === 'impressao' ? ' [Impressão]' : destino === 'corte_costura' ? ' [Corte/Costura]' : '';
   db.prepare(`INSERT INTO historico (pedido_id, user_id, tipo, etapa_de, etapa_para, descricao) VALUES (?, ?, ?, ?, ?, ?)`)
-    .run(pedido.id, req.user.id, 'arquivo', pedido.etapa_atual, pedido.etapa_atual, `Arquivo "${req.file.originalname}" anexado por ${req.user.nome}`);
+    .run(pedido.id, req.user.id, 'arquivo', pedido.etapa_atual, pedido.etapa_atual, `Arquivo "${req.file.originalname}"${destinoLabel} anexado por ${req.user.nome}`);
   res.json({ id: r.lastInsertRowid, nome: req.file.originalname });
 });
 
+// Abrir arquivo inline no browser
 app.get('/api/arquivos/:id', authMiddleware, (req, res) => {
   const arquivo = db.prepare('SELECT * FROM arquivos WHERE id = ?').get(req.params.id);
   if (!arquivo) return res.status(404).json({ erro: 'Arquivo não encontrado' });
   const filePath = path.join(UPLOADS_DIR, arquivo.caminho);
   if (!fs.existsSync(filePath)) return res.status(404).json({ erro: 'Arquivo não encontrado no servidor' });
   res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(arquivo.nome)}"`);
+  res.setHeader('Content-Type', arquivo.tipo || 'application/octet-stream');
+  res.sendFile(filePath);
+});
+
+// Baixar arquivo (forçar download)
+app.get('/api/arquivos/:id/download', authMiddleware, (req, res) => {
+  const arquivo = db.prepare('SELECT * FROM arquivos WHERE id = ?').get(req.params.id);
+  if (!arquivo) return res.status(404).json({ erro: 'Arquivo não encontrado' });
+  const filePath = path.join(UPLOADS_DIR, arquivo.caminho);
+  if (!fs.existsSync(filePath)) return res.status(404).json({ erro: 'Arquivo não encontrado no servidor' });
+  res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(arquivo.nome)}"`);
   res.setHeader('Content-Type', arquivo.tipo || 'application/octet-stream');
   res.sendFile(filePath);
 });

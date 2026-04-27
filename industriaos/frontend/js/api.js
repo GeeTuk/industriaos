@@ -52,9 +52,10 @@ const api = {
   auditoria: () => apiFetch('/auditoria'),
 
   arquivos: {
-    upload: async (pedidoId, formData) => {
+    upload: async (pedidoId, formData, destino = null) => {
       const token = getToken();
-      const res = await fetch(API_BASE + `/pedidos/${pedidoId}/arquivos`, {
+      const qs = destino ? `?destino=${encodeURIComponent(destino)}` : '';
+      const res = await fetch(API_BASE + `/pedidos/${pedidoId}/arquivos${qs}`, {
         method: 'POST',
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: formData
@@ -64,5 +65,6 @@ const api = {
       return data;
     },
     url: (id) => `${API_BASE}/arquivos/${id}?token=${getToken()}`,
+    downloadUrl: (id) => `${API_BASE}/arquivos/${id}/download?token=${getToken()}`,
   },
 };
