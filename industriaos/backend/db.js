@@ -39,6 +39,8 @@ function initDb() {
       razao_social TEXT NOT NULL,
       nome_fantasia TEXT,
       cnpj_cpf TEXT,
+      ie TEXT,
+      im TEXT,
       telefone TEXT,
       email TEXT,
       cidade TEXT,
@@ -71,6 +73,8 @@ function initDb() {
       corte_ok INTEGER DEFAULT 0,
       impressao_ok INTEGER DEFAULT 0,
       categoria TEXT,
+      transportadora TEXT,
+      codigo_rastreio TEXT,
       vendedor_id INTEGER REFERENCES users(id),
       criado_em TEXT DEFAULT (datetime('now')),
       atualizado_em TEXT DEFAULT (datetime('now'))
@@ -157,6 +161,10 @@ function initDb() {
     'ALTER TABLE pedidos ADD COLUMN corte_ok INTEGER DEFAULT 0',
     'ALTER TABLE pedidos ADD COLUMN impressao_ok INTEGER DEFAULT 0',
     'ALTER TABLE pedidos ADD COLUMN categoria TEXT',
+    'ALTER TABLE pedidos ADD COLUMN transportadora TEXT',
+    'ALTER TABLE pedidos ADD COLUMN codigo_rastreio TEXT',
+    'ALTER TABLE clientes ADD COLUMN ie TEXT',
+    'ALTER TABLE clientes ADD COLUMN im TEXT',
   ];
   for (const m of migrations) {
     try { db.exec(m); } catch (_) { /* coluna já existe */ }

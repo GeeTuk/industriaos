@@ -89,15 +89,15 @@ app.get('/api/clientes/:id', authMiddleware, (req, res) => {
 });
 
 app.post('/api/clientes', authMiddleware, (req, res) => {
-  const { razao_social, nome_fantasia, cnpj_cpf, telefone, email, cidade, estado, endereco, observacoes } = req.body;
+  const { razao_social, nome_fantasia, cnpj_cpf, ie, im, telefone, email, cidade, estado, endereco, observacoes } = req.body;
   if (!razao_social) return res.status(400).json({ erro: 'Razão social obrigatória' });
-  const r = db.prepare(`INSERT INTO clientes (razao_social, nome_fantasia, cnpj_cpf, telefone, email, cidade, estado, endereco, observacoes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(razao_social, nome_fantasia, cnpj_cpf, telefone, email, cidade, estado, endereco, observacoes);
+  const r = db.prepare(`INSERT INTO clientes (razao_social, nome_fantasia, cnpj_cpf, ie, im, telefone, email, cidade, estado, endereco, observacoes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(razao_social, nome_fantasia, cnpj_cpf, ie, im, telefone, email, cidade, estado, endereco, observacoes);
   res.json({ id: r.lastInsertRowid, mensagem: 'Cliente cadastrado' });
 });
 
 app.put('/api/clientes/:id', authMiddleware, (req, res) => {
-  const { razao_social, nome_fantasia, cnpj_cpf, telefone, email, cidade, estado, endereco, observacoes, status } = req.body;
-  db.prepare(`UPDATE clientes SET razao_social=?, nome_fantasia=?, cnpj_cpf=?, telefone=?, email=?, cidade=?, estado=?, endereco=?, observacoes=?, status=? WHERE id=?`).run(razao_social, nome_fantasia, cnpj_cpf, telefone, email, cidade, estado, endereco, observacoes, status, req.params.id);
+  const { razao_social, nome_fantasia, cnpj_cpf, ie, im, telefone, email, cidade, estado, endereco, observacoes, status } = req.body;
+  db.prepare(`UPDATE clientes SET razao_social=?, nome_fantasia=?, cnpj_cpf=?, ie=?, im=?, telefone=?, email=?, cidade=?, estado=?, endereco=?, observacoes=?, status=? WHERE id=?`).run(razao_social, nome_fantasia, cnpj_cpf, ie, im, telefone, email, cidade, estado, endereco, observacoes, status, req.params.id);
   res.json({ mensagem: 'Cliente atualizado' });
 });
 
@@ -121,7 +121,7 @@ app.get('/api/pedidos', authMiddleware, (req, res) => {
   // Filtro por etapas visíveis
   if (!['admin', 'gerente_geral'].includes(req.user.perfil)) {
     const etapasVisiveis = [];
-    for (let e = 1; e <= 9; e++) {
+    for (let e = 1; e <= 8; e++) {
       if (podeVerEtapa(req.user, e, db)) etapasVisiveis.push(e);
     }
     if (etapasVisiveis.length === 0) return res.json([]);
@@ -187,7 +187,7 @@ app.post('/api/pedidos', authMiddleware, (req, res) => {
 
 // Avançar etapa
 app.post('/api/pedidos/:id/avancar', authMiddleware, (req, res) => {
-  const { observacao, fila, precisa_solvente, precisa_uv } = req.body;
+  const { observacao, fila, precisa_solvente, precisa_uv, transportadora, codigo_rastreio } = req.body;
   const pedido = db.prepare('SELECT * FROM pedidos WHERE id = ?').get(req.params.id);
   if (!pedido) return res.status(404).json({ erro: 'Pedido não encontrado' });
 
@@ -195,59 +195,70 @@ app.post('/api/pedidos/:id/avancar', authMiddleware, (req, res) => {
     return res.status(403).json({ erro: 'Sem permissão para operar esta etapa' });
   }
 
-  // Arte (4): designer define quais impressões serão necessárias
+  // ── ETAPA 8: EXPEDIÇÃO → CONCLUIR pedido ─────────────────────────
+  if (pedido.etapa_atual === 8) {
+    db.prepare(`UPDATE pedidos SET status = 'concluido', transportadora = ?, codigo_rastreio = ?, atualizado_em = CURRENT_TIMESTAMP WHERE id = ?`)
+      .run(transportadora || null, codigo_rastreio || null, pedido.id);
+    db.prepare('INSERT INTO historico (pedido_id, user_id, tipo, etapa_de, etapa_para, descricao) VALUES (?, ?, ?, ?, ?, ?)').run(
+      pedido.id, req.user.id, 'avanco', 8, 8,
+      `Pedido expedido e CONCLUÍDO por ${req.user.nome}${transportadora ? ` — Transportadora: ${transportadora}` : ''}${codigo_rastreio ? ` — Rastreio: ${codigo_rastreio}` : ''}${observacao ? ' — ' + observacao : ''}`
+    );
+    return res.json({ mensagem: 'Pedido expedido e concluído!', status: 'concluido' });
+  }
+
+  // ── ARTE (4): designer define quais impressões serão necessárias ──
   if (pedido.etapa_atual === 4) {
     db.prepare('UPDATE pedidos SET precisa_solvente = ?, precisa_uv = ?, corte_ok = 0, impressao_ok = 0, impressao_solvente_ok = 0, impressao_uv_ok = 0 WHERE id = ?')
       .run(precisa_solvente ? 1 : 0, precisa_uv ? 1 : 0, pedido.id);
-    // Avança normalmente para etapa 5
+    // Avança normalmente para etapa 5 abaixo
   }
 
   // ── ETAPA 5: Impressão / Corte em PARALELO ────────────────────────
   if (pedido.etapa_atual === 5) {
-    const p = db.prepare('SELECT * FROM pedidos WHERE id = ?').get(pedido.id);
+    const helper = (msg) => res.json({ mensagem: msg });
 
     if (fila === 'corte') {
-      // Equipe de Corte marca corte como feito
       db.prepare('UPDATE pedidos SET corte_ok = 1, atualizado_em = CURRENT_TIMESTAMP WHERE id = ?').run(pedido.id);
       db.prepare('INSERT INTO historico (pedido_id, user_id, tipo, etapa_de, etapa_para, descricao) VALUES (?, ?, ?, ?, ?, ?)').run(pedido.id, req.user.id, 'parcial', 5, 5, `Corte concluído por ${req.user.nome}`);
-      const atualizado = db.prepare('SELECT * FROM pedidos WHERE id = ?').get(pedido.id);
-      if (!atualizado.impressao_ok) return res.json({ mensagem: 'Corte registrado! Aguardando conclusão da Impressão.' });
-      // Ambos prontos → avança abaixo
+      const upd = db.prepare('SELECT * FROM pedidos WHERE id = ?').get(pedido.id);
+      if (!upd.impressao_ok) return helper('Corte registrado! ✓ Aguardando conclusão da Impressão.');
 
     } else if (fila === 'solvente') {
       db.prepare('UPDATE pedidos SET impressao_solvente_ok = 1, atualizado_em = CURRENT_TIMESTAMP WHERE id = ?').run(pedido.id);
       db.prepare('INSERT INTO historico (pedido_id, user_id, tipo, etapa_de, etapa_para, descricao) VALUES (?, ?, ?, ?, ?, ?)').run(pedido.id, req.user.id, 'parcial', 5, 5, `Impressão Solvente concluída por ${req.user.nome}`);
-      const atualizado = db.prepare('SELECT * FROM pedidos WHERE id = ?').get(pedido.id);
-      // Impressão só fica pronta quando todas as filas requeridas estiverem ok
-      const impCompleta = !atualizado.precisa_uv || atualizado.impressao_uv_ok;
-      if (!impCompleta) return res.json({ mensagem: 'Solvente registrada! Aguardando UV.' });
+      const upd = db.prepare('SELECT * FROM pedidos WHERE id = ?').get(pedido.id);
+      if (upd.precisa_uv && !upd.impressao_uv_ok) return helper('Solvente registrada! ✓ Aguardando UV.');
       db.prepare('UPDATE pedidos SET impressao_ok = 1, atualizado_em = CURRENT_TIMESTAMP WHERE id = ?').run(pedido.id);
-      const final = db.prepare('SELECT * FROM pedidos WHERE id = ?').get(pedido.id);
-      if (!final.corte_ok) return res.json({ mensagem: 'Impressão concluída! Aguardando Corte.' });
-      // Ambos prontos → avança abaixo
+      const upd2 = db.prepare('SELECT * FROM pedidos WHERE id = ?').get(pedido.id);
+      if (!upd2.corte_ok) return helper('Impressão concluída! ✓ Aguardando Corte.');
 
     } else if (fila === 'uv') {
       db.prepare('UPDATE pedidos SET impressao_uv_ok = 1, atualizado_em = CURRENT_TIMESTAMP WHERE id = ?').run(pedido.id);
       db.prepare('INSERT INTO historico (pedido_id, user_id, tipo, etapa_de, etapa_para, descricao) VALUES (?, ?, ?, ?, ?, ?)').run(pedido.id, req.user.id, 'parcial', 5, 5, `Impressão UV concluída por ${req.user.nome}`);
-      const atualizado = db.prepare('SELECT * FROM pedidos WHERE id = ?').get(pedido.id);
-      const impCompleta = !atualizado.precisa_solvente || atualizado.impressao_solvente_ok;
-      if (!impCompleta) return res.json({ mensagem: 'UV registrada! Aguardando Solvente.' });
+      const upd = db.prepare('SELECT * FROM pedidos WHERE id = ?').get(pedido.id);
+      if (upd.precisa_solvente && !upd.impressao_solvente_ok) return helper('UV registrada! ✓ Aguardando Solvente.');
       db.prepare('UPDATE pedidos SET impressao_ok = 1, atualizado_em = CURRENT_TIMESTAMP WHERE id = ?').run(pedido.id);
-      const final = db.prepare('SELECT * FROM pedidos WHERE id = ?').get(pedido.id);
-      if (!final.corte_ok) return res.json({ mensagem: 'Impressão concluída! Aguardando Corte.' });
-      // Ambos prontos → avança abaixo
+      const upd2 = db.prepare('SELECT * FROM pedidos WHERE id = ?').get(pedido.id);
+      if (!upd2.corte_ok) return helper('Impressão concluída! ✓ Aguardando Corte.');
 
     } else {
       // Impressão simples (sem solvente/UV separado)
       db.prepare('UPDATE pedidos SET impressao_ok = 1, atualizado_em = CURRENT_TIMESTAMP WHERE id = ?').run(pedido.id);
       db.prepare('INSERT INTO historico (pedido_id, user_id, tipo, etapa_de, etapa_para, descricao) VALUES (?, ?, ?, ?, ?, ?)').run(pedido.id, req.user.id, 'parcial', 5, 5, `Impressão concluída por ${req.user.nome}`);
-      const atualizado = db.prepare('SELECT * FROM pedidos WHERE id = ?').get(pedido.id);
-      if (!atualizado.corte_ok) return res.json({ mensagem: 'Impressão registrada! Aguardando Corte.' });
-      // Ambos prontos → avança abaixo
+      const upd = db.prepare('SELECT * FROM pedidos WHERE id = ?').get(pedido.id);
+      if (!upd.corte_ok) return helper('Impressão registrada! ✓ Aguardando Corte.');
     }
+
+    // AMBOS prontos: avança EXPLICITAMENTE para etapa 6 (Costura)
+    db.prepare('UPDATE pedidos SET etapa_atual = 6, atualizado_em = CURRENT_TIMESTAMP WHERE id = ?').run(pedido.id);
+    db.prepare('INSERT INTO historico (pedido_id, user_id, tipo, etapa_de, etapa_para, descricao) VALUES (?, ?, ?, ?, ?, ?)').run(
+      pedido.id, req.user.id, 'avanco', 5, 6,
+      `Impressão e Corte concluídos — Avançado para Costura por ${req.user.nome}`
+    );
+    return res.json({ mensagem: 'Impressão e Corte concluídos! Pedido avançado para Costura.', etapa: 6, etapa_nome: 'Costura' });
   }
 
-  // ── AVANÇAR para próxima etapa ─────────────────────────────────────
+  // ── AVANÇAR etapa genérico (etapas 1–4 e 6–7) ────────────────────
   let proximaEtapa = pedido.etapa_atual + 1;
 
   // Pula Motor (7) para tipos que não precisam de montagem
@@ -261,8 +272,7 @@ app.post('/api/pedidos/:id/avancar', authMiddleware, (req, res) => {
     pedido.etapa_atual, proximaEtapa,
     `Avançado de "${ETAPAS[pedido.etapa_atual]?.nome}" para "${ETAPAS[proximaEtapa]?.nome}"${observacao ? ': ' + observacao : ''} — por ${req.user.nome}`
   );
-
-  res.json({ mensagem: `Pedido avançado para etapa ${proximaEtapa}`, etapa: proximaEtapa, etapa_nome: ETAPAS[proximaEtapa]?.nome });
+  res.json({ mensagem: `Pedido avançado para ${ETAPAS[proximaEtapa]?.nome}`, etapa: proximaEtapa, etapa_nome: ETAPAS[proximaEtapa]?.nome });
 });
 
 // Devolver etapa
@@ -300,6 +310,39 @@ app.put('/api/pedidos/:id', authMiddleware, (req, res) => {
   );
   db.prepare('INSERT INTO historico (pedido_id, user_id, tipo, etapa_de, etapa_para, descricao) VALUES (?, ?, ?, ?, ?, ?)').run(pedido.id, req.user.id, 'edicao', pedido.etapa_atual, pedido.etapa_atual, `Dados do pedido editados por ${req.user.nome}`);
   res.json({ mensagem: 'Pedido atualizado' });
+});
+
+// Cancelar pedido
+app.post('/api/pedidos/:id/cancelar', authMiddleware, (req, res) => {
+  const { motivo } = req.body;
+  if (!motivo) return res.status(400).json({ erro: 'Informe o motivo do cancelamento' });
+
+  const pedido = db.prepare('SELECT * FROM pedidos WHERE id = ?').get(req.params.id);
+  if (!pedido) return res.status(404).json({ erro: 'Pedido não encontrado' });
+
+  const podeCanc = ['admin','gerente_geral'].includes(req.user.perfil) ||
+    (req.user.perfil === 'vendedor' && pedido.etapa_atual <= 3);
+  if (!podeCanc) return res.status(403).json({ erro: 'Sem permissão para cancelar este pedido' });
+
+  db.prepare(`UPDATE pedidos SET status = 'cancelado', atualizado_em = CURRENT_TIMESTAMP WHERE id = ?`).run(pedido.id);
+  db.prepare('INSERT INTO historico (pedido_id, user_id, tipo, etapa_de, etapa_para, descricao) VALUES (?, ?, ?, ?, ?, ?)').run(
+    pedido.id, req.user.id, 'edicao', pedido.etapa_atual, pedido.etapa_atual,
+    `PEDIDO CANCELADO por ${req.user.nome} — Motivo: ${motivo}`
+  );
+  db.prepare('INSERT INTO auditoria (user_id, acao, detalhes) VALUES (?, ?, ?)').run(req.user.id, 'cancelar_pedido', `Pedido ${pedido.codigo} cancelado`);
+  res.json({ mensagem: 'Pedido cancelado' });
+});
+
+// Excluir pedido (admin only)
+app.delete('/api/pedidos/:id', authMiddleware, requireAdmin, (req, res) => {
+  const pedido = db.prepare('SELECT * FROM pedidos WHERE id = ?').get(req.params.id);
+  if (!pedido) return res.status(404).json({ erro: 'Pedido não encontrado' });
+
+  db.prepare('DELETE FROM historico WHERE pedido_id = ?').run(pedido.id);
+  db.prepare('DELETE FROM arquivos WHERE pedido_id = ?').run(pedido.id);
+  db.prepare('DELETE FROM pedidos WHERE id = ?').run(pedido.id);
+  db.prepare('INSERT INTO auditoria (user_id, acao, detalhes) VALUES (?, ?, ?)').run(req.user.id, 'excluir_pedido', `Pedido ${pedido.codigo} excluído permanentemente`);
+  res.json({ mensagem: 'Pedido excluído' });
 });
 
 // ── DASHBOARD / MÉTRICAS ──────────────────────────────────────────

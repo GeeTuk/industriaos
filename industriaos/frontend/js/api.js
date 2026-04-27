@@ -35,6 +35,8 @@ const api = {
     atualizar: (id, d) => apiFetch(`/pedidos/${id}`, { method: 'PUT', body: JSON.stringify(d) }),
     avancar: (id, data) => apiFetch(`/pedidos/${id}/avancar`, { method: 'POST', body: JSON.stringify(data) }),
     devolver: (id, data) => apiFetch(`/pedidos/${id}/devolver`, { method: 'POST', body: JSON.stringify(data) }),
+    cancelar: (id, motivo) => apiFetch(`/pedidos/${id}/cancelar`, { method: 'POST', body: JSON.stringify({ motivo }) }),
+    deletar: (id) => apiFetch(`/pedidos/${id}`, { method: 'DELETE' }),
   },
 
   dashboard: () => apiFetch('/dashboard'),

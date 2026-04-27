@@ -164,11 +164,21 @@ async function abrirFichaPedido(id) {
           acoes += `<button class="btn btn-orange btn-sm" onclick="modalDevolver(${pedido.id}, ${pedido.etapa_atual})">↩ Devolver</button>`;
         }
       } else {
-        acoes += `<button class="btn btn-success btn-sm" onclick="modalAvancar(${pedido.id}, ${pedido.etapa_atual})">✓ Concluir (Expedir)</button>`;
+        acoes += `<button class="btn btn-success btn-sm" onclick="modalAvancar(${pedido.id}, ${pedido.etapa_atual})">🚚 Expedir Pedido</button>`;
       }
     }
     if (isAdmin) {
       acoes += `<button class="btn btn-ghost btn-sm" onclick="modalEditarPedido(${pedido.id})">✎ Editar</button>`;
+    }
+    // Cancelar (admin/gerente sempre; vendedor até etapa 3)
+    const podeCanc = ['admin','gerente_geral'].includes(currentUser.perfil) ||
+      (currentUser.perfil === 'vendedor' && pedido.etapa_atual <= 3);
+    if (podeCanc && pedido.status === 'ativo') {
+      acoes += `<button class="btn btn-danger btn-sm" onclick="modalCancelarPedido(${pedido.id}, '${pedido.codigo}')">✕ Cancelar</button>`;
+    }
+    // Excluir permanentemente (admin, quando já cancelado)
+    if (currentUser.perfil === 'admin' && pedido.status === 'cancelado') {
+      acoes += `<button class="btn btn-danger btn-sm" onclick="modalExcluirPedido(${pedido.id}, '${pedido.codigo}')">🗑 Excluir</button>`;
     }
 
     // Capa: primeira imagem da etapa Aprovação (3)
@@ -285,6 +295,13 @@ async function abrirFichaPedido(id) {
         ${pedido.cores ? `<div class="info-item"><div class="info-label">Cores</div><div class="info-value">${pedido.cores}</div></div>` : ''}
       </div>` : ''}
 
+      ${(pedido.transportadora || pedido.codigo_rastreio) ? `
+      <div class="info-row">
+        <div class="section-label" style="grid-column:1/-1;margin-bottom:4px">🚚 Informações de Envio</div>
+        ${pedido.transportadora ? `<div class="info-item"><div class="info-label">Transportadora</div><div class="info-value">${pedido.transportadora}</div></div>` : ''}
+        ${pedido.codigo_rastreio ? `<div class="info-item"><div class="info-label">Código de Rastreio</div><div class="info-value" style="font-family:var(--font-mono)">${pedido.codigo_rastreio}</div></div>` : ''}
+      </div>` : ''}
+
       <hr class="divider">
       <div class="section-label" style="display:flex;justify-content:space-between;align-items:center">
         <span>Arquivos</span>
@@ -337,24 +354,37 @@ async function avancarParalelo(id, fila) {
 
 function modalAvancar(id, etapaAtual) {
   const isArte = etapaAtual === 4;
+  const isExpedicao = etapaAtual === 8;
+
   const body = `
     ${isArte ? `<div class="form-group">
-      <label>Tipo de Impressão *</label>
+      <label>Tipo de Impressão necessária</label>
       <div style="display:flex;gap:20px;margin-top:8px">
         <label class="checkbox-row"><input type="checkbox" id="imp-solvente"> Solvente</label>
         <label class="checkbox-row"><input type="checkbox" id="imp-uv"> UV</label>
       </div>
     </div>` : ''}
+    ${isExpedicao ? `
     <div class="form-group">
-      <label>Observação ${isArte ? '(opcional)' : '(opcional)'}</label>
-      <textarea id="obs-avancar" placeholder="Adicione uma observação para a próxima etapa..."></textarea>
+      <label>Transportadora</label>
+      <input type="text" id="exp-transportadora" placeholder="Nome da transportadora ou entrega própria">
+    </div>
+    <div class="form-group">
+      <label>Código de Rastreio</label>
+      <input type="text" id="exp-rastreio" placeholder="Código de rastreamento (opcional)">
+    </div>` : ''}
+    <div class="form-group">
+      <label>Observação (opcional)</label>
+      <textarea id="obs-avancar" placeholder="${isExpedicao ? 'Informações adicionais sobre a entrega...' : 'Observação para a próxima etapa...'}"></textarea>
     </div>
   `;
   const footer = `
     <button class="btn btn-ghost" onclick="fecharModalForce()">Cancelar</button>
-    <button class="btn btn-success" onclick="confirmarAvancar(${id}, ${etapaAtual})">→ Confirmar Avanço</button>
+    <button class="btn btn-success" onclick="confirmarAvancar(${id}, ${etapaAtual})">
+      ${isExpedicao ? '🚚 Confirmar Expedição' : '→ Confirmar Avanço'}
+    </button>
   `;
-  abrirModal('Avançar Etapa', body, footer);
+  abrirModal(isExpedicao ? 'Expedir Pedido' : 'Avançar Etapa', body, footer);
 }
 
 async function confirmarAvancar(id, etapaAtual) {
@@ -364,11 +394,16 @@ async function confirmarAvancar(id, etapaAtual) {
     dados.precisa_solvente = document.getElementById('imp-solvente')?.checked;
     dados.precisa_uv = document.getElementById('imp-uv')?.checked;
   }
+  if (etapaAtual === 8) {
+    dados.transportadora = document.getElementById('exp-transportadora')?.value;
+    dados.codigo_rastreio = document.getElementById('exp-rastreio')?.value;
+  }
   try {
     const res = await api.pedidos.avancar(id, dados);
     toast(res.mensagem, 'success');
     fecharModalForce();
     carregarPedidos();
+    if (etapaAtual !== 8) setTimeout(() => abrirFichaPedido(id), 300);
   } catch (e) { toast(e.message, 'error'); }
 }
 
@@ -414,6 +449,57 @@ async function confirmarDevolver(id) {
   } catch (e) { toast(e.message, 'error'); }
 }
 
+// ── CANCELAR / EXCLUIR PEDIDO ─────────────────────────────────────
+function modalCancelarPedido(id, codigo) {
+  const body = `
+    <p style="color:var(--text2);margin-bottom:16px">O pedido <strong>${codigo}</strong> será marcado como cancelado. Esta ação pode ser revertida por um administrador.</p>
+    <div class="form-group">
+      <label>Motivo do Cancelamento *</label>
+      <textarea id="cancel-motivo" placeholder="Informe o motivo (ex: cliente desistiu, orçamento não aprovado...)"></textarea>
+    </div>
+  `;
+  const footer = `
+    <button class="btn btn-ghost" onclick="fecharModalForce()">Voltar</button>
+    <button class="btn btn-danger" onclick="confirmarCancelar(${id})">✕ Confirmar Cancelamento</button>
+  `;
+  abrirModal('Cancelar Pedido', body, footer);
+}
+
+async function confirmarCancelar(id) {
+  const motivo = document.getElementById('cancel-motivo')?.value?.trim();
+  if (!motivo) { toast('Informe o motivo do cancelamento', 'error'); return; }
+  try {
+    await api.pedidos.cancelar(id, motivo);
+    toast('Pedido cancelado', 'success');
+    fecharModalForce();
+    carregarPedidos();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+function modalExcluirPedido(id, codigo) {
+  const body = `
+    <div style="text-align:center;padding:8px 0">
+      <div style="font-size:40px;margin-bottom:12px">⚠️</div>
+      <p style="color:var(--text1);font-size:15px;font-weight:600">Excluir permanentemente?</p>
+      <p style="color:var(--text2);font-size:13px;margin-top:8px">O pedido <strong>${codigo}</strong> e todo seu histórico serão removidos do banco de dados. <strong>Esta ação não pode ser desfeita.</strong></p>
+    </div>
+  `;
+  const footer = `
+    <button class="btn btn-ghost" onclick="fecharModalForce()">Cancelar</button>
+    <button class="btn btn-danger" onclick="confirmarExcluir(${id})">🗑 Excluir Definitivamente</button>
+  `;
+  abrirModal('Excluir Pedido', body, footer);
+}
+
+async function confirmarExcluir(id) {
+  try {
+    await api.pedidos.deletar(id);
+    toast('Pedido excluído permanentemente', 'success');
+    fecharModalForce();
+    carregarPedidos();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
 // ── CATÁLOGOS ─────────────────────────────────────────────────────
 const NP_CATEGORIAS = {
   INF: ['Tenda Casa', 'Tenda Padrão', 'Tenda Aranha', 'Portal', 'Roof Top', '3D', 'Colchão', 'Túnel'],
@@ -449,6 +535,43 @@ function npAtualizarCampos() {
   }
 }
 
+function npToggleNovoCliente() {
+  const form = document.getElementById('np-novo-cliente-form');
+  if (form) form.style.display = form.style.display === 'none' ? 'block' : 'none';
+}
+
+async function npCriarCliente() {
+  const razao = document.getElementById('nc-razao')?.value?.trim();
+  if (!razao) { toast('Informe a Razão Social', 'error'); return; }
+  const dados = {
+    razao_social: razao,
+    nome_fantasia: document.getElementById('nc-fantasia')?.value || null,
+    cnpj_cpf: document.getElementById('nc-cnpj')?.value || null,
+    ie: document.getElementById('nc-ie')?.value || null,
+    im: document.getElementById('nc-im')?.value || null,
+    telefone: document.getElementById('nc-telefone')?.value || null,
+    email: document.getElementById('nc-email')?.value || null,
+    cidade: document.getElementById('nc-cidade')?.value || null,
+    estado: document.getElementById('nc-estado')?.value || null,
+    endereco: document.getElementById('nc-endereco')?.value || null,
+    observacoes: document.getElementById('nc-obs')?.value || null,
+  };
+  try {
+    const res = await api.clientes.criar(dados);
+    // Adiciona o novo cliente ao select e o seleciona
+    const sel = document.getElementById('np-cliente');
+    if (sel) {
+      const opt = document.createElement('option');
+      opt.value = res.id;
+      opt.textContent = razao;
+      opt.selected = true;
+      sel.appendChild(opt);
+    }
+    toast(`Cliente "${razao}" criado e selecionado!`, 'success');
+    npToggleNovoCliente();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
 // ── NOVO PEDIDO ───────────────────────────────────────────────────
 async function modalNovoPedido() {
   let clientes = [];
@@ -477,10 +600,68 @@ async function modalNovoPedido() {
       </div>
       <div class="form-group">
         <label>Cliente</label>
-        <select id="np-cliente">
-          <option value="">— Selecionar —</option>
-          ${clienteOpts}
-        </select>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select id="np-cliente" style="flex:1">
+            <option value="">— Selecionar —</option>
+            ${clienteOpts}
+          </select>
+          <button type="button" class="btn btn-ghost btn-sm" onclick="npToggleNovoCliente()" style="white-space:nowrap;flex-shrink:0">+ Novo Cliente</button>
+        </div>
+      </div>
+
+      <!-- Formulário inline de novo cliente -->
+      <div id="np-novo-cliente-form" style="display:none;grid-column:1/-1;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:4px">
+        <div style="font-size:13px;font-weight:600;color:var(--accent);margin-bottom:12px">📋 Cadastrar Novo Cliente</div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Razão Social *</label>
+            <input type="text" id="nc-razao" placeholder="Razão social da empresa">
+          </div>
+          <div class="form-group">
+            <label>Nome Fantasia</label>
+            <input type="text" id="nc-fantasia" placeholder="Nome fantasia / apelido">
+          </div>
+          <div class="form-group">
+            <label>CNPJ / CPF</label>
+            <input type="text" id="nc-cnpj" placeholder="00.000.000/0001-00">
+          </div>
+          <div class="form-group">
+            <label>Inscrição Estadual (IE)</label>
+            <input type="text" id="nc-ie" placeholder="000.000.000.000">
+          </div>
+          <div class="form-group">
+            <label>Inscrição Municipal (IM)</label>
+            <input type="text" id="nc-im" placeholder="000000-0">
+          </div>
+          <div class="form-group">
+            <label>Telefone / WhatsApp</label>
+            <input type="text" id="nc-telefone" placeholder="(00) 00000-0000">
+          </div>
+          <div class="form-group">
+            <label>E-mail</label>
+            <input type="email" id="nc-email" placeholder="contato@empresa.com.br">
+          </div>
+          <div class="form-group">
+            <label>Cidade</label>
+            <input type="text" id="nc-cidade" placeholder="Cidade">
+          </div>
+          <div class="form-group">
+            <label>Estado (UF)</label>
+            <input type="text" id="nc-estado" placeholder="SP" maxlength="2">
+          </div>
+          <div class="form-group span2">
+            <label>Endereço Completo</label>
+            <input type="text" id="nc-endereco" placeholder="Rua, número, bairro, CEP">
+          </div>
+          <div class="form-group span2">
+            <label>Observações</label>
+            <textarea id="nc-obs" placeholder="Informações adicionais sobre o cliente..." style="height:60px"></textarea>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px">
+          <button type="button" class="btn btn-ghost btn-sm" onclick="npToggleNovoCliente()">Cancelar</button>
+          <button type="button" class="btn btn-primary btn-sm" onclick="npCriarCliente()">✓ Criar e Selecionar</button>
+        </div>
       </div>
       <div class="form-group">
         <label>Material</label>
