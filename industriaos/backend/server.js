@@ -118,8 +118,12 @@ app.get('/api/pedidos', authMiddleware, (req, res) => {
   if (tipo) { where += ' AND p.tipo = ?'; params.push(tipo); }
   if (q) { where += ' AND (p.codigo LIKE ? OR p.descricao LIKE ? OR c.razao_social LIKE ?)'; params.push(`%${q}%`, `%${q}%`, `%${q}%`); }
 
-  // Filtro por etapas visíveis
-  if (!['admin', 'gerente_geral'].includes(req.user.perfil)) {
+  // Vendedor: vê APENAS os próprios pedidos (isolamento total entre vendedores)
+  if (req.user.perfil === 'vendedor') {
+    where += ' AND p.vendedor_id = ?';
+    params.push(req.user.id);
+  } else if (!['admin', 'gerente_geral'].includes(req.user.perfil)) {
+    // Produção/Designer: filtra por etapas visíveis
     const etapasVisiveis = [];
     for (let e = 1; e <= 8; e++) {
       if (podeVerEtapa(req.user, e, db)) etapasVisiveis.push(e);
@@ -152,8 +156,13 @@ app.get('/api/pedidos/:id', authMiddleware, (req, res) => {
 
   if (!pedido) return res.status(404).json({ erro: 'Pedido não encontrado' });
 
-  // Verifica se pode ver a etapa atual
-  if (!podeVerEtapa(req.user, pedido.etapa_atual, db) && !['admin', 'gerente_geral'].includes(req.user.perfil)) {
+  // Vendedor só pode ver pedidos próprios
+  if (req.user.perfil === 'vendedor' && pedido.vendedor_id !== req.user.id) {
+    return res.status(403).json({ erro: 'Sem permissão para ver este pedido' });
+  }
+
+  // Produção/Designer: verifica etapa visível
+  if (!podeVerEtapa(req.user, pedido.etapa_atual, db) && !['admin', 'gerente_geral'].includes(req.user.perfil) && req.user.perfil !== 'vendedor') {
     return res.status(403).json({ erro: 'Sem permissão para ver este pedido' });
   }
 
