@@ -122,7 +122,7 @@ async function abrirFichaPedido(id) {
 
     // Etapas que o tipo de produto pula (Motor=7 só para INF e BAQ)
     const etapasAtivas = [1,2,3,4,5,6];
-    if (['INF','BAQ'].includes(pedido.tipo)) etapasAtivas.push(7);
+    if (pedido.tipo === 'INF') etapasAtivas.push(7);
     etapasAtivas.push(8);
 
     const progressBar = Array.from({length: 8}, (_,i) => {
@@ -143,8 +143,11 @@ async function abrirFichaPedido(id) {
       const impTag = (!pedido.precisa_solvente && !pedido.precisa_uv)
         ? `<span class="tag ${pedido.impressao_ok ? 'tag-green' : 'tag-orange'}">${pedido.impressao_ok ? '✓ Impressão' : '⏳ Impressão'}</span>`
         : '';
+      const impTag2 = pedido.impressora
+        ? `<span class="tag tag-blue" style="font-size:11px">🖨️ ${pedido.impressora}</span>`
+        : '';
       impressaoStatus = `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
-        ${corteTag}${impTag}${solv}${uv}
+        ${impTag2}${corteTag}${impTag}${solv}${uv}
       </div>`;
     }
 
@@ -416,8 +419,17 @@ function modalAvancar(id, etapaAtual) {
   const isExpedicao = etapaAtual === 8;
 
   const body = `
-    ${isArte ? `<div class="form-group">
-      <label>Tipo de Impressão necessária</label>
+    ${isArte ? `
+    <div class="form-group">
+      <label>Impressora *</label>
+      <select id="imp-impressora" style="width:100%">
+        <option value="">— Selecione a impressora —</option>
+        <option value="Mimaki UV (100-160)">🖨️ Mimaki UV (100-160)</option>
+        <option value="Mimaki Solvente (150-160)">🖨️ Mimaki Solvente (150-160)</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Tratamento de impressão necessário</label>
       <div style="display:flex;gap:20px;margin-top:8px">
         <label class="checkbox-row"><input type="checkbox" id="imp-solvente"> Solvente</label>
         <label class="checkbox-row"><input type="checkbox" id="imp-uv"> UV</label>
@@ -450,6 +462,9 @@ async function confirmarAvancar(id, etapaAtual) {
   const obs = document.getElementById('obs-avancar')?.value;
   const dados = { observacao: obs };
   if (etapaAtual === 4) {
+    const impressora = document.getElementById('imp-impressora')?.value;
+    if (!impressora) { toast('Selecione a impressora antes de avançar.', 'error'); return; }
+    dados.impressora = impressora;
     dados.precisa_solvente = document.getElementById('imp-solvente')?.checked;
     dados.precisa_uv = document.getElementById('imp-uv')?.checked;
   }
@@ -606,12 +621,10 @@ function npSelecionarCliente(id, nome) {
 // ── CATÁLOGOS ─────────────────────────────────────────────────────
 const NP_CATEGORIAS = {
   INF: ['Tenda Casa', 'Tenda Padrão', 'Tenda Aranha', 'Portal', 'Roof Top', '3D', 'Colchão', 'Túnel'],
-  BAQ: ['Normal Shape', 'Special Shape', 'Racer'],
   LON: [], ADH: [], PLC: [],
 };
 const NP_MATERIAIS = {
   INF: ['Nylon'],
-  BAQ: ['Nylon'],
   LON: ['Lona'],
   ADH: ['Transparente', 'Branco', 'Lux'],
   PLC: ['2mm', '1mm'],
@@ -688,7 +701,6 @@ async function modalNovoPedido() {
           <option value="LON">Lona</option>
           <option value="ADH">Adesivo</option>
           <option value="PLC">Placa</option>
-          <option value="BAQ">Balão de Ar Quente</option>
         </select>
       </div>
       <div class="form-group" id="np-categoria-group">

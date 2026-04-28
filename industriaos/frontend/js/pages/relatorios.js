@@ -37,11 +37,10 @@ function _relSetDias(d) {
 }
 
 const TIPO_META = {
-  INF: { label: 'Inflável',  cor: 'blue'   },
-  LON: { label: 'Lona',      cor: 'orange' },
-  ADH: { label: 'Adesivo',   cor: 'green'  },
-  PLC: { label: 'Placa',     cor: 'yellow' },
-  BAQ: { label: 'Banquinho', cor: 'gray'   },
+  INF: { label: 'Inflável', cor: 'blue'   },
+  LON: { label: 'Lona',     cor: 'orange' },
+  ADH: { label: 'Adesivo',  cor: 'green'  },
+  PLC: { label: 'Placa',    cor: 'yellow' },
 };
 
 const ETAPAS_REL = {

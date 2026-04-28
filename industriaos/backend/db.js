@@ -185,6 +185,7 @@ function initDb() {
     'ALTER TABLE clientes ADD COLUMN ie TEXT',
     'ALTER TABLE clientes ADD COLUMN im TEXT',
     'ALTER TABLE arquivos ADD COLUMN destino TEXT',
+    'ALTER TABLE pedidos ADD COLUMN impressora TEXT',
   ];
   for (const m of migrations) {
     try { db.exec(m); } catch (_) { /* coluna já existe */ }

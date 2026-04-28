@@ -376,12 +376,14 @@ function _renderFilaCards(pedidos, etapa) {
     return;
   }
 
-  const cards = lista.map(p => `
+  function _buildCard(p, posicao) {
+    return `
     <div class="fila-card ${p.urgente ? 'fila-card-urgente' : ''}" onclick="abrirFichaPedido(${p.id})">
       <div class="fila-card-header">
         <span class="fila-codigo">${p.codigo}</span>
         ${tagTipo(p.tipo)}
         ${tagsBadges(p)}
+        ${posicao != null ? `<span style="margin-left:auto;font-size:11px;color:var(--text3);font-weight:600">#${posicao} na fila</span>` : ''}
       </div>
       <div class="fila-card-body">
         <div class="fila-cliente">${p.cliente_nome || 'Sem cliente'}</div>
@@ -391,9 +393,38 @@ function _renderFilaCards(pedidos, etapa) {
         <span>${p.prazo ? 'Prazo: ' + formatDateShort(p.prazo) : ''}</span>
         <span>${formatDate(p.atualizado_em)}</span>
       </div>
-    </div>
-  `).join('');
+    </div>`;
+  }
 
+  // Etapa 5 (Impressão): agrupar por impressora
+  if (etapa === 5) {
+    const grupos = {};
+    lista.forEach(p => {
+      const key = p.impressora || '⚠ Impressora não definida';
+      if (!grupos[key]) grupos[key] = [];
+      grupos[key].push(p);
+    });
+
+    const html = Object.entries(grupos).map(([impressora, itens]) => {
+      const urgentes = itens.filter(p => p.urgente).length;
+      const cards = itens.map((p, i) => _buildCard(p, i + 1)).join('');
+      return `
+        <div style="margin-bottom:24px">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+            <span style="font-size:14px;font-weight:700;color:var(--accent)">🖨️ ${impressora}</span>
+            <span style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:2px 10px;font-size:11px;color:var(--text2)">${itens.length} pedido${itens.length > 1 ? 's' : ''}</span>
+            ${urgentes > 0 ? `<span style="background:var(--red-dim);color:var(--red);border-radius:12px;padding:2px 10px;font-size:11px;font-weight:700">🔴 ${urgentes} urgente${urgentes > 1 ? 's' : ''}</span>` : ''}
+          </div>
+          <div class="cards-grid">${cards}</div>
+        </div>`;
+    }).join('');
+
+    document.getElementById('fila-tab-content').innerHTML = html;
+    return;
+  }
+
+  // Demais etapas: lista normal com posição
+  const cards = lista.map((p, i) => _buildCard(p, null)).join('');
   document.getElementById('fila-tab-content').innerHTML = `<div class="cards-grid">${cards}</div>`;
 }
 

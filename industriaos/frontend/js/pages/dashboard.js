@@ -198,6 +198,7 @@ function _renderDashboardVendedor(data) {
 function _renderDashboardProducao(data) {
   const perfil = currentUser.perfil;
   const mf = data.minhaFila || { total: 0, urgentes: 0, etapas: [], lista: [] };
+  const isDesigner = ['designer', 'moldes'].includes(perfil);
 
   const PERFIL_LABEL = {
     impressao: 'Impressão', corte: 'Corte', costura: 'Costura',
@@ -250,6 +251,26 @@ function _renderDashboardProducao(data) {
       </div>`;
   }).join('') : `<div class="empty-state" style="padding:32px"><div class="empty-icon">✅</div><div class="empty-text">Fila vazia — nenhum pedido aguardando</div></div>`;
 
+  // Fila por impressora — só para designer/moldes
+  const impressorasHtml = isDesigner && (data.filaImpressoras || []).length ? `
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-bottom:20px">
+      ${data.filaImpressoras.map(imp => {
+        const semImp = imp.impressora === 'Sem impressora';
+        const cor = semImp ? 'var(--text3)' : imp.urgentes > 0 ? 'var(--red)' : 'var(--accent)';
+        return `
+        <div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:18px 20px">
+          <div style="font-size:11px;color:var(--text3);margin-bottom:6px">🖨️ IMPRESSORA</div>
+          <div style="font-size:14px;font-weight:700;color:${cor};margin-bottom:10px">${imp.impressora}</div>
+          <div style="font-size:36px;font-weight:800;color:${cor};line-height:1">${imp.total}</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:4px">pedido${imp.total !== 1 ? 's' : ''} na fila</div>
+          ${imp.urgentes > 0 ? `<div style="margin-top:8px;font-size:12px;font-weight:700;color:var(--red)">🔴 ${imp.urgentes} urgente${imp.urgentes > 1 ? 's' : ''}</div>` : ''}
+        </div>`;
+      }).join('')}
+    </div>` : isDesigner ? `
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px 20px;margin-bottom:20px;text-align:center;color:var(--text3);font-size:13px">
+      🖨️ Nenhum pedido nas impressoras no momento
+    </div>` : '';
+
   document.getElementById('topbar-actions').innerHTML =
     `<button class="btn btn-ghost btn-sm" onclick="renderDashboard()">↻ Atualizar</button>`;
 
@@ -259,6 +280,7 @@ function _renderDashboardProducao(data) {
       <div style="font-size:13px;color:var(--text3);margin-top:2px">Painel do setor de ${setorLabel}</div>
     </div>
     ${hero}
+    ${isDesigner ? `<div class="section-label" style="margin-bottom:10px">🖨️ Fila das Impressoras</div>${impressorasHtml}` : ''}
     ${etapasHtml}
     <div class="card">
       <div class="card-header">

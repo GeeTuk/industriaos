@@ -133,12 +133,18 @@ app.get('/api/pedidos', authMiddleware, (req, res) => {
   }
 
   const pedidos = db.prepare(`
-    SELECT p.*, c.razao_social as cliente_nome, u.nome as vendedor_nome
+    SELECT p.*, c.razao_social as cliente_nome, u.nome as vendedor_nome,
+           h_entry.criado_em as entrou_etapa_em
     FROM pedidos p
     LEFT JOIN clientes c ON p.cliente_id = c.id
     LEFT JOIN users u ON p.vendedor_id = u.id
+    LEFT JOIN (
+      SELECT pedido_id, etapa_para, MAX(criado_em) as criado_em
+      FROM historico WHERE tipo IN ('avanco','criacao')
+      GROUP BY pedido_id, etapa_para
+    ) h_entry ON h_entry.pedido_id = p.id AND h_entry.etapa_para = p.etapa_atual
     ${where}
-    ORDER BY p.atualizado_em DESC
+    ORDER BY p.urgente DESC, h_entry.criado_em ASC, p.atualizado_em ASC
   `).all(...params);
 
   res.json(pedidos);
@@ -196,7 +202,7 @@ app.post('/api/pedidos', authMiddleware, (req, res) => {
 
 // Avançar etapa
 app.post('/api/pedidos/:id/avancar', authMiddleware, (req, res) => {
-  const { observacao, fila, precisa_solvente, precisa_uv, transportadora, codigo_rastreio } = req.body;
+  const { observacao, fila, precisa_solvente, precisa_uv, transportadora, codigo_rastreio, impressora } = req.body;
   const pedido = db.prepare('SELECT * FROM pedidos WHERE id = ?').get(req.params.id);
   if (!pedido) return res.status(404).json({ erro: 'Pedido não encontrado' });
 
@@ -215,10 +221,11 @@ app.post('/api/pedidos/:id/avancar', authMiddleware, (req, res) => {
     return res.json({ mensagem: 'Pedido expedido e concluído!', status: 'concluido' });
   }
 
-  // ── ARTE (4): designer define quais impressões serão necessárias ──
+  // ── ARTE (4): designer define impressora e tipo de impressão ──────
   if (pedido.etapa_atual === 4) {
-    db.prepare('UPDATE pedidos SET precisa_solvente = ?, precisa_uv = ?, corte_ok = 0, impressao_ok = 0, impressao_solvente_ok = 0, impressao_uv_ok = 0 WHERE id = ?')
-      .run(precisa_solvente ? 1 : 0, precisa_uv ? 1 : 0, pedido.id);
+    if (!impressora) return res.status(400).json({ erro: 'Selecione a impressora antes de avançar.' });
+    db.prepare('UPDATE pedidos SET precisa_solvente = ?, precisa_uv = ?, impressora = ?, corte_ok = 0, impressao_ok = 0, impressao_solvente_ok = 0, impressao_uv_ok = 0 WHERE id = ?')
+      .run(precisa_solvente ? 1 : 0, precisa_uv ? 1 : 0, impressora, pedido.id);
     // Avança normalmente para etapa 5 abaixo
   }
 
@@ -271,7 +278,7 @@ app.post('/api/pedidos/:id/avancar', authMiddleware, (req, res) => {
   let proximaEtapa = pedido.etapa_atual + 1;
 
   // Pula Motor (7) para tipos que não precisam de montagem
-  if (proximaEtapa === 7 && !['INF', 'BAQ'].includes(pedido.tipo)) {
+  if (proximaEtapa === 7 && pedido.tipo !== 'INF') {
     proximaEtapa = 8;
   }
 
@@ -461,10 +468,22 @@ app.get('/api/dashboard', authMiddleware, (req, res) => {
     }
   }
 
+  // ── Fila por impressora (para designer/moldes visualizarem) ──
+  const filaImpressoras = db.prepare(`
+    SELECT
+      COALESCE(impressora, 'Sem impressora') as impressora,
+      COUNT(*) as total,
+      SUM(CASE WHEN urgente = 1 THEN 1 ELSE 0 END) as urgentes
+    FROM pedidos
+    WHERE etapa_atual = 5 AND status = 'ativo'
+    GROUP BY impressora
+    ORDER BY impressora
+  `).all();
+
   res.json({
     porEtapa, recentes, totalAtivos, totalClientes, totalUsuarios,
     totalUrgentes, totalVencidos, totalPrazoProx, supPendentes,
-    urgentes, prazoProximo, meusPedidos, minhaFila, etapas: ETAPAS
+    urgentes, prazoProximo, meusPedidos, minhaFila, filaImpressoras, etapas: ETAPAS
   });
 });
 
