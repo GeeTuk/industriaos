@@ -122,6 +122,32 @@ function initDb() {
       atualizado_em TEXT DEFAULT (CURRENT_TIMESTAMP)
     );
 
+    -- Impressoras cadastradas
+    CREATE TABLE IF NOT EXISTS impressoras (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      nome TEXT NOT NULL,
+      ativo INTEGER DEFAULT 1,
+      criado_em TEXT DEFAULT (datetime('now'))
+    );
+
+    -- Categorias de suprimentos por setor (gerenciável pelo admin)
+    CREATE TABLE IF NOT EXISTS sup_categorias (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      setor TEXT NOT NULL,
+      nome TEXT NOT NULL,
+      ativo INTEGER DEFAULT 1,
+      criado_em TEXT DEFAULT (datetime('now'))
+    );
+
+    -- Subcategorias de produto por tipo (ex: INF → Tenda Casa, Roof Top)
+    CREATE TABLE IF NOT EXISTS produto_categorias (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      produto_tipo TEXT NOT NULL,
+      nome TEXT NOT NULL,
+      ativo INTEGER DEFAULT 1,
+      criado_em TEXT DEFAULT (datetime('now'))
+    );
+
     -- Log de auditoria
     CREATE TABLE IF NOT EXISTS auditoria (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -172,6 +198,41 @@ function initDb() {
     console.log('✅ Banco de dados inicializado com dados de exemplo.');
     console.log('👤 Admin: admin@industriaos.com / admin123');
     console.log('👤 Demais usuários: [email acima] / senha123');
+  }
+
+  // Seed: impressoras (se ainda não existirem)
+  if (!db.prepare('SELECT id FROM impressoras LIMIT 1').get()) {
+    ['Mimaki UV (100-160)', 'Mimaki Solvente (150-160)'].forEach(nome => {
+      db.prepare('INSERT INTO impressoras (nome) VALUES (?)').run(nome);
+    });
+  }
+
+  // Seed: categorias de suprimentos por setor
+  if (!db.prepare('SELECT id FROM sup_categorias LIMIT 1').get()) {
+    const cats = {
+      impressao: ['Tinta Solvente','Tinta UV','Mídia / Vinil','Solvente de Limpeza','Cabeça de Impressão','Outros'],
+      corte:     ['Lâmina de Corte','Estilete / Bisturi','Fita de Borda','Ferramenta de Corte','Outros'],
+      costura:   ['Linha de Costura','Agulha','Velcro','Zíper','Fita de Borda','Elástico','Outros'],
+      motor:     ['Componente de Motor','Cola / Adesivo','Ferramenta Elétrica','Cabo / Fio','Parafuso / Porca','Outros'],
+      expedicao: ['Caixa de Embalagem','Fita Adesiva','Lacre / Selo','Etiqueta','Outros'],
+      default:   ['Material de Escritório','EPI / Segurança','Produto de Limpeza','Ferramentas','Outros'],
+    };
+    for (const [setor, nomes] of Object.entries(cats)) {
+      for (const nome of nomes) {
+        db.prepare('INSERT INTO sup_categorias (setor, nome) VALUES (?, ?)').run(setor, nome);
+      }
+    }
+  }
+
+  // Seed: subcategorias de produto
+  if (!db.prepare('SELECT id FROM produto_categorias LIMIT 1').get()) {
+    const cats = [
+      ['INF','Tenda Casa'],['INF','Tenda Padrão'],['INF','Tenda Aranha'],
+      ['INF','Portal'],['INF','Roof Top'],['INF','3D'],['INF','Colchão'],['INF','Túnel'],
+    ];
+    for (const [tipo, nome] of cats) {
+      db.prepare('INSERT INTO produto_categorias (produto_tipo, nome) VALUES (?, ?)').run(tipo, nome);
+    }
   }
 
   // Migrações: adicionar colunas que podem não existir em instâncias antigas

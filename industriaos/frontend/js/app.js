@@ -22,6 +22,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     try {
       currentUser = await api.me();
       etapasMap = await api.etapas();
+      window.appConfig = await api.config().catch(() => ({ impressoras: [], supCategorias: {}, produtoCategorias: {} }));
       mostrarApp();
       navigate('dashboard');
     } catch {
@@ -51,6 +52,7 @@ async function fazerLogin() {
     setToken(res.token);
     currentUser = await api.me();
     etapasMap = await api.etapas();
+    window.appConfig = await api.config().catch(() => ({ impressoras: [], supCategorias: {}, produtoCategorias: {} }));
     mostrarApp();
     navigate('dashboard');
   } catch (e) {
@@ -97,8 +99,9 @@ const PAGES = [
   { id: 'suprimentos', label: 'Suprimentos', icon: '📦', section: 'Operação',   perfis: ['admin','gerente_geral','impressao','corte','costura','motor','expedicao'] },
   { id: 'clientes',    label: 'Clientes',    icon: '👥', section: 'Comercial',  perfis: ['admin','gerente_geral','vendedor'] },
   { id: 'relatorios',  label: 'Relatórios',  icon: '📈', section: 'Gestão',     perfis: ['admin','gerente_geral'] },
-  { id: 'usuarios',    label: 'Usuários',    icon: '👤', section: 'Sistema',    perfis: ['admin'] },
-  { id: 'auditoria',   label: 'Auditoria',   icon: '🔍', section: 'Sistema',    perfis: ['admin'] },
+  { id: 'usuarios',       label: 'Usuários',      icon: '👤', section: 'Sistema',    perfis: ['admin'] },
+  { id: 'auditoria',     label: 'Auditoria',     icon: '🔍', section: 'Sistema',    perfis: ['admin'] },
+  { id: 'configuracoes', label: 'Configurações',  icon: '⚙️', section: 'Sistema',    perfis: ['admin'] },
 ];
 
 function buildNav() {
@@ -134,7 +137,7 @@ function navigate(page, params = {}) {
   const navEl = document.getElementById(`nav-${page}`);
   if (navEl) navEl.classList.add('active');
 
-  const titles = { dashboard: 'Dashboard', pedidos: 'Pedidos', fila: 'Minha Fila', clientes: 'Clientes', usuarios: 'Usuários & Permissões', auditoria: 'Log de Auditoria', suprimentos: 'Suprimentos', relatorios: 'Relatórios' };
+  const titles = { dashboard: 'Dashboard', pedidos: 'Pedidos', fila: 'Minha Fila', clientes: 'Clientes', usuarios: 'Usuários & Permissões', auditoria: 'Log de Auditoria', suprimentos: 'Suprimentos', relatorios: 'Relatórios', configuracoes: 'Configurações do Sistema' };
   document.getElementById('page-title').textContent = titles[page] || page;
   document.getElementById('topbar-actions').innerHTML = '';
 
@@ -149,6 +152,7 @@ function navigate(page, params = {}) {
     case 'usuarios': renderUsuarios(); break;
     case 'suprimentos': renderSuprimentos(); break;
     case 'relatorios': renderRelatorios(); break;
+    case 'configuracoes': renderConfiguracoes(); break;
     case 'auditoria': renderAuditoria(); break;
     default: content.innerHTML = '<div class="empty-state"><div class="empty-icon">🚧</div><div class="empty-text">Página em construção</div></div>';
   }
@@ -274,7 +278,8 @@ const SUPRIMENTO_CATS = {
 };
 
 function modalSolicitarSuprimento() {
-  const cats = SUPRIMENTO_CATS[currentUser.perfil] || SUPRIMENTO_CATS.default;
+  const cfg = window.appConfig?.supCategorias || {};
+  const cats = cfg[currentUser.perfil] || cfg.default || [];
   const catOpts = cats.map(c => `<option value="${c}">${c}</option>`).join('');
   const body = `
     <div class="form-grid cols1" style="gap:14px">

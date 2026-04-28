@@ -487,6 +487,73 @@ app.get('/api/dashboard', authMiddleware, (req, res) => {
   });
 });
 
+// ── CONFIG PÚBLICA (frontend carrega no login) ────────────────────
+app.get('/api/config', authMiddleware, (req, res) => {
+  const impressoras = db.prepare('SELECT id, nome FROM impressoras WHERE ativo = 1 ORDER BY nome').all();
+
+  const supRows = db.prepare('SELECT setor, nome FROM sup_categorias WHERE ativo = 1 ORDER BY setor, nome').all();
+  const supCategorias = {};
+  for (const r of supRows) {
+    if (!supCategorias[r.setor]) supCategorias[r.setor] = [];
+    supCategorias[r.setor].push(r.nome);
+  }
+
+  const catRows = db.prepare('SELECT produto_tipo, nome FROM produto_categorias WHERE ativo = 1 ORDER BY produto_tipo, nome').all();
+  const produtoCategorias = {};
+  for (const r of catRows) {
+    if (!produtoCategorias[r.produto_tipo]) produtoCategorias[r.produto_tipo] = [];
+    produtoCategorias[r.produto_tipo].push(r.nome);
+  }
+
+  res.json({ impressoras, supCategorias, produtoCategorias });
+});
+
+// ── ADMIN: CONFIGURAÇÕES ───────────────────────────────────────────
+// Impressoras
+app.get('/api/admin/impressoras', authMiddleware, requireAdmin, (req, res) => {
+  res.json(db.prepare('SELECT * FROM impressoras WHERE ativo = 1 ORDER BY nome').all());
+});
+app.post('/api/admin/impressoras', authMiddleware, requireAdmin, (req, res) => {
+  const { nome } = req.body;
+  if (!nome?.trim()) return res.status(400).json({ erro: 'Nome obrigatório' });
+  const r = db.prepare('INSERT INTO impressoras (nome) VALUES (?)').run(nome.trim());
+  res.json({ id: r.lastInsertRowid, nome: nome.trim(), ativo: 1 });
+});
+app.delete('/api/admin/impressoras/:id', authMiddleware, requireAdmin, (req, res) => {
+  db.prepare('UPDATE impressoras SET ativo = 0 WHERE id = ?').run(req.params.id);
+  res.json({ ok: true });
+});
+
+// Categorias de Suprimentos
+app.get('/api/admin/sup-categorias', authMiddleware, requireAdmin, (req, res) => {
+  res.json(db.prepare('SELECT * FROM sup_categorias WHERE ativo = 1 ORDER BY setor, nome').all());
+});
+app.post('/api/admin/sup-categorias', authMiddleware, requireAdmin, (req, res) => {
+  const { setor, nome } = req.body;
+  if (!setor || !nome?.trim()) return res.status(400).json({ erro: 'Setor e nome obrigatórios' });
+  const r = db.prepare('INSERT INTO sup_categorias (setor, nome) VALUES (?, ?)').run(setor, nome.trim());
+  res.json({ id: r.lastInsertRowid, setor, nome: nome.trim(), ativo: 1 });
+});
+app.delete('/api/admin/sup-categorias/:id', authMiddleware, requireAdmin, (req, res) => {
+  db.prepare('UPDATE sup_categorias SET ativo = 0 WHERE id = ?').run(req.params.id);
+  res.json({ ok: true });
+});
+
+// Categorias de Produto
+app.get('/api/admin/produto-categorias', authMiddleware, requireAdmin, (req, res) => {
+  res.json(db.prepare('SELECT * FROM produto_categorias WHERE ativo = 1 ORDER BY produto_tipo, nome').all());
+});
+app.post('/api/admin/produto-categorias', authMiddleware, requireAdmin, (req, res) => {
+  const { produto_tipo, nome } = req.body;
+  if (!produto_tipo || !nome?.trim()) return res.status(400).json({ erro: 'Tipo e nome obrigatórios' });
+  const r = db.prepare('INSERT INTO produto_categorias (produto_tipo, nome) VALUES (?, ?)').run(produto_tipo, nome.trim());
+  res.json({ id: r.lastInsertRowid, produto_tipo, nome: nome.trim(), ativo: 1 });
+});
+app.delete('/api/admin/produto-categorias/:id', authMiddleware, requireAdmin, (req, res) => {
+  db.prepare('UPDATE produto_categorias SET ativo = 0 WHERE id = ?').run(req.params.id);
+  res.json({ ok: true });
+});
+
 // ── RELATÓRIOS ────────────────────────────────────────────────────
 app.get('/api/relatorios', authMiddleware, (req, res) => {
   if (!['admin','gerente_geral'].includes(req.user.perfil))

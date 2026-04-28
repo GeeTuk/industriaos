@@ -424,8 +424,8 @@ function modalAvancar(id, etapaAtual) {
       <label>Impressora *</label>
       <select id="imp-impressora" style="width:100%">
         <option value="">— Selecione a impressora —</option>
-        <option value="Mimaki UV (100-160)">🖨️ Mimaki UV (100-160)</option>
-        <option value="Mimaki Solvente (150-160)">🖨️ Mimaki Solvente (150-160)</option>
+        ${(window.appConfig?.impressoras || [{nome:'Mimaki UV (100-160)'},{nome:'Mimaki Solvente (150-160)'}])
+          .map(i => `<option value="${i.nome}">🖨️ ${i.nome}</option>`).join('')}
       </select>
     </div>
     <div class="form-group">
@@ -633,8 +633,9 @@ const NP_CORES = ['Vermelho', 'Azul Omni', 'Azul 388C', 'Verde Maçã', 'Branco'
 
 function npAtualizarCampos() {
   const tipo = document.getElementById('np-tipo')?.value;
-  // Categoria
-  const cats = NP_CATEGORIAS[tipo] || [];
+  // Categoria (usa appConfig se disponível, senão fallback hardcoded)
+  const cfgCats = window.appConfig?.produtoCategorias || {};
+  const cats = cfgCats[tipo] ?? NP_CATEGORIAS[tipo] ?? [];
   const catEl = document.getElementById('np-categoria');
   if (catEl) {
     catEl.innerHTML = cats.length

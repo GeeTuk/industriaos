@@ -48,6 +48,25 @@ const api = {
 
   dashboard: () => apiFetch('/dashboard'),
   relatorios: (dias = 30) => apiFetch(`/relatorios?dias=${dias}`),
+  config: () => apiFetch('/config'),
+
+  admin: {
+    impressoras: {
+      listar: () => apiFetch('/admin/impressoras'),
+      criar: (nome) => apiFetch('/admin/impressoras', { method: 'POST', body: JSON.stringify({ nome }) }),
+      apagar: (id) => apiFetch(`/admin/impressoras/${id}`, { method: 'DELETE' }),
+    },
+    supCategorias: {
+      listar: () => apiFetch('/admin/sup-categorias'),
+      criar: (d) => apiFetch('/admin/sup-categorias', { method: 'POST', body: JSON.stringify(d) }),
+      apagar: (id) => apiFetch(`/admin/sup-categorias/${id}`, { method: 'DELETE' }),
+    },
+    produtoCategorias: {
+      listar: () => apiFetch('/admin/produto-categorias'),
+      criar: (d) => apiFetch('/admin/produto-categorias', { method: 'POST', body: JSON.stringify(d) }),
+      apagar: (id) => apiFetch(`/admin/produto-categorias/${id}`, { method: 'DELETE' }),
+    },
+  },
 
   usuarios: {
     listar: () => apiFetch('/usuarios'),
