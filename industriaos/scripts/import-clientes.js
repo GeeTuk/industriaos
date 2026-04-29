@@ -15,7 +15,7 @@ if (!fs.existsSync(JSON_PATH)) {
 }
 
 const db = new Database(DB_PATH);
-const clientes = JSON.parse(fs.readFileSync(JSON_PATH, 'utf8'));
+const clientes = JSON.parse(fs.readFileSync(JSON_PATH, 'utf8').replace(/^﻿/, ''));
 
 const insert = db.prepare(`
   INSERT INTO clientes (razao_social, nome_fantasia, cnpj_cpf, ie, telefone, email, cidade, estado, endereco, observacoes, status)
