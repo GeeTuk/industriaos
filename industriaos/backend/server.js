@@ -101,6 +101,14 @@ app.put('/api/clientes/:id', authMiddleware, (req, res) => {
   res.json({ mensagem: 'Cliente atualizado' });
 });
 
+app.delete('/api/clientes/:id', authMiddleware, requireAdmin, (req, res) => {
+  const id = req.params.id;
+  const pedidos = db.prepare('SELECT COUNT(*) as c FROM pedidos WHERE cliente_id = ?').get(id);
+  if (pedidos.c > 0) return res.status(400).json({ erro: `Não é possível apagar: cliente possui ${pedidos.c} pedido(s) vinculado(s).` });
+  db.prepare('DELETE FROM clientes WHERE id = ?').run(id);
+  res.json({ mensagem: 'Cliente removido' });
+});
+
 // ── PEDIDOS ───────────────────────────────────────────────────────
 function gerarCodigo(tipo) {
   const ano = new Date().getFullYear();

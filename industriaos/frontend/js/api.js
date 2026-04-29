@@ -23,6 +23,7 @@ const api = {
     get: (id) => apiFetch(`/clientes/${id}`),
     criar: (d) => apiFetch('/clientes', { method: 'POST', body: JSON.stringify(d) }),
     atualizar: (id, d) => apiFetch(`/clientes/${id}`, { method: 'PUT', body: JSON.stringify(d) }),
+    deletar: (id) => apiFetch(`/clientes/${id}`, { method: 'DELETE' }),
   },
 
   pedidos: {

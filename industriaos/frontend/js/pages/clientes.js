@@ -90,8 +90,10 @@ async function abrirFichaCliente(id) {
         </table>
       </div>
     `;
+    const isAdmin = ['admin','gerente_geral'].includes(currentUser.perfil);
     const footer = `
       <button class="btn btn-ghost" onclick="fecharModalForce()">Fechar</button>
+      ${isAdmin && !c.pedidos?.length ? `<button class="btn btn-danger" onclick="modalApagarCliente(${c.id}, '${c.razao_social.replace(/'/g,"\\'")}')">🗑 Apagar</button>` : ''}
       <button class="btn btn-primary" onclick="modalEditarCliente(${c.id})">✎ Editar</button>
     `;
     abrirModal(c.razao_social, body, footer, 'modal-lg');
@@ -166,6 +168,30 @@ async function modalEditarCliente(id) {
     <button class="btn btn-primary" onclick="confirmarEditarCliente(${id})">Salvar</button>
   `;
   abrirModal('Editar Cliente', body, footer);
+}
+
+function modalApagarCliente(id, nome) {
+  const body = `
+    <div style="text-align:center;padding:8px 0">
+      <div style="font-size:40px;margin-bottom:12px">⚠️</div>
+      <p style="color:var(--text1);font-size:15px;font-weight:600">Apagar cliente permanentemente?</p>
+      <p style="color:var(--text2);font-size:13px;margin-top:8px"><strong>${nome}</strong> será removido do sistema. Esta ação não pode ser desfeita.</p>
+    </div>
+  `;
+  const footer = `
+    <button class="btn btn-ghost" onclick="fecharModalForce()">Cancelar</button>
+    <button class="btn btn-danger" onclick="confirmarApagarCliente(${id})">🗑 Apagar Definitivamente</button>
+  `;
+  abrirModal('Apagar Cliente', body, footer);
+}
+
+async function confirmarApagarCliente(id) {
+  try {
+    await api.clientes.deletar(id);
+    toast('Cliente removido', 'success');
+    fecharModalForce();
+    carregarClientes();
+  } catch (e) { toast(e.message, 'error'); }
 }
 
 async function confirmarEditarCliente(id) {
