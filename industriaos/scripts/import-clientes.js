@@ -18,8 +18,8 @@ const db = new Database(DB_PATH);
 const clientes = JSON.parse(fs.readFileSync(JSON_PATH, 'utf8').replace(/^﻿/, ''));
 
 const insert = db.prepare(`
-  INSERT INTO clientes (razao_social, nome_fantasia, cnpj_cpf, ie, telefone, email, cidade, estado, endereco, observacoes, status)
-  VALUES (@razao_social, @nome_fantasia, @cnpj_cpf, @ie, @telefone, @email, @cidade, @estado, @endereco, @observacoes, 'ativo')
+  INSERT INTO clientes (razao_social, nome_fantasia, cnpj_cpf, telefone, email, cidade, estado, endereco, observacoes, status)
+  VALUES (@razao_social, @nome_fantasia, @cnpj_cpf, @telefone, @email, @cidade, @estado, @endereco, @observacoes, 'ativo')
 `);
 
 const checkExiste = db.prepare('SELECT id FROM clientes WHERE razao_social = ? OR (cnpj_cpf IS NOT NULL AND cnpj_cpf != "" AND cnpj_cpf = ?)');
