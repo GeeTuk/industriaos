@@ -148,6 +148,23 @@ function initDb() {
       criado_em TEXT DEFAULT (datetime('now'))
     );
 
+    -- Materiais de produto por tipo (ex: INF → Nylon, LON → Lona)
+    CREATE TABLE IF NOT EXISTS produto_materiais (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      produto_tipo TEXT NOT NULL,
+      nome TEXT NOT NULL,
+      ativo INTEGER DEFAULT 1,
+      criado_em TEXT DEFAULT (datetime('now'))
+    );
+
+    -- Cores disponíveis para pedidos
+    CREATE TABLE IF NOT EXISTS produto_cores (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      nome TEXT NOT NULL,
+      ativo INTEGER DEFAULT 1,
+      criado_em TEXT DEFAULT (datetime('now'))
+    );
+
     -- Log de auditoria
     CREATE TABLE IF NOT EXISTS auditoria (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -232,6 +249,26 @@ function initDb() {
     ];
     for (const [tipo, nome] of cats) {
       db.prepare('INSERT INTO produto_categorias (produto_tipo, nome) VALUES (?, ?)').run(tipo, nome);
+    }
+  }
+
+  // Seed: materiais de produto
+  if (!db.prepare('SELECT id FROM produto_materiais LIMIT 1').get()) {
+    const mats = [
+      ['INF','Nylon'],
+      ['LON','Lona'],
+      ['ADH','Transparente'],['ADH','Branco'],['ADH','Lux'],
+      ['PLC','2mm'],['PLC','1mm'],
+    ];
+    for (const [tipo, nome] of mats) {
+      db.prepare('INSERT INTO produto_materiais (produto_tipo, nome) VALUES (?, ?)').run(tipo, nome);
+    }
+  }
+
+  // Seed: cores
+  if (!db.prepare('SELECT id FROM produto_cores LIMIT 1').get()) {
+    for (const nome of ['Vermelho','Azul Omni','Azul 388C','Verde Maçã','Branco','Verde Bandeira','Laranja']) {
+      db.prepare('INSERT INTO produto_cores (nome) VALUES (?)').run(nome);
     }
   }
 

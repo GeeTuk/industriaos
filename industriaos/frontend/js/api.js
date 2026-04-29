@@ -66,6 +66,16 @@ const api = {
       criar: (d) => apiFetch('/admin/produto-categorias', { method: 'POST', body: JSON.stringify(d) }),
       apagar: (id) => apiFetch(`/admin/produto-categorias/${id}`, { method: 'DELETE' }),
     },
+    produtoMateriais: {
+      listar: () => apiFetch('/admin/produto-materiais'),
+      criar: (d) => apiFetch('/admin/produto-materiais', { method: 'POST', body: JSON.stringify(d) }),
+      apagar: (id) => apiFetch(`/admin/produto-materiais/${id}`, { method: 'DELETE' }),
+    },
+    produtoCores: {
+      listar: () => apiFetch('/admin/produto-cores'),
+      criar: (nome) => apiFetch('/admin/produto-cores', { method: 'POST', body: JSON.stringify({ nome }) }),
+      apagar: (id) => apiFetch(`/admin/produto-cores/${id}`, { method: 'DELETE' }),
+    },
   },
 
   usuarios: {

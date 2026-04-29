@@ -505,7 +505,17 @@ app.get('/api/config', authMiddleware, (req, res) => {
     produtoCategorias[r.produto_tipo].push(r.nome);
   }
 
-  res.json({ impressoras, supCategorias, produtoCategorias });
+  const matRows = db.prepare('SELECT produto_tipo, nome FROM produto_materiais WHERE ativo = 1 ORDER BY produto_tipo, nome').all();
+  const produtoMateriais = {};
+  for (const r of matRows) {
+    if (!produtoMateriais[r.produto_tipo]) produtoMateriais[r.produto_tipo] = [];
+    produtoMateriais[r.produto_tipo].push(r.nome);
+  }
+
+  const coresRows = db.prepare('SELECT nome FROM produto_cores WHERE ativo = 1 ORDER BY nome').all();
+  const cores = coresRows.map(r => r.nome);
+
+  res.json({ impressoras, supCategorias, produtoCategorias, produtoMateriais, cores });
 });
 
 // ── ADMIN: CONFIGURAÇÕES ───────────────────────────────────────────
@@ -551,6 +561,36 @@ app.post('/api/admin/produto-categorias', authMiddleware, requireAdmin, (req, re
 });
 app.delete('/api/admin/produto-categorias/:id', authMiddleware, requireAdmin, (req, res) => {
   db.prepare('UPDATE produto_categorias SET ativo = 0 WHERE id = ?').run(req.params.id);
+  res.json({ ok: true });
+});
+
+// Materiais de Produto
+app.get('/api/admin/produto-materiais', authMiddleware, requireAdmin, (req, res) => {
+  res.json(db.prepare('SELECT * FROM produto_materiais WHERE ativo = 1 ORDER BY produto_tipo, nome').all());
+});
+app.post('/api/admin/produto-materiais', authMiddleware, requireAdmin, (req, res) => {
+  const { produto_tipo, nome } = req.body;
+  if (!produto_tipo || !nome?.trim()) return res.status(400).json({ erro: 'Tipo e nome obrigatórios' });
+  const r = db.prepare('INSERT INTO produto_materiais (produto_tipo, nome) VALUES (?, ?)').run(produto_tipo, nome.trim());
+  res.json({ id: r.lastInsertRowid, produto_tipo, nome: nome.trim(), ativo: 1 });
+});
+app.delete('/api/admin/produto-materiais/:id', authMiddleware, requireAdmin, (req, res) => {
+  db.prepare('UPDATE produto_materiais SET ativo = 0 WHERE id = ?').run(req.params.id);
+  res.json({ ok: true });
+});
+
+// Cores
+app.get('/api/admin/produto-cores', authMiddleware, requireAdmin, (req, res) => {
+  res.json(db.prepare('SELECT * FROM produto_cores WHERE ativo = 1 ORDER BY nome').all());
+});
+app.post('/api/admin/produto-cores', authMiddleware, requireAdmin, (req, res) => {
+  const { nome } = req.body;
+  if (!nome?.trim()) return res.status(400).json({ erro: 'Nome obrigatório' });
+  const r = db.prepare('INSERT INTO produto_cores (nome) VALUES (?)').run(nome.trim());
+  res.json({ id: r.lastInsertRowid, nome: nome.trim(), ativo: 1 });
+});
+app.delete('/api/admin/produto-cores/:id', authMiddleware, requireAdmin, (req, res) => {
+  db.prepare('UPDATE produto_cores SET ativo = 0 WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
 });
 

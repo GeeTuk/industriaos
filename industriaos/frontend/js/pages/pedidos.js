@@ -437,12 +437,12 @@ function modalAvancar(id, etapaAtual) {
     </div>` : ''}
     ${isExpedicao ? `
     <div class="form-group">
-      <label>Transportadora</label>
+      <label>Transportadora <span style="color:var(--text3);font-weight:400;font-size:11px">(opcional)</span></label>
       <input type="text" id="exp-transportadora" placeholder="Nome da transportadora ou entrega própria">
     </div>
     <div class="form-group">
-      <label>Código de Rastreio</label>
-      <input type="text" id="exp-rastreio" placeholder="Código de rastreamento (opcional)">
+      <label>Código de Rastreio <span style="color:var(--text3);font-weight:400;font-size:11px">(opcional)</span></label>
+      <input type="text" id="exp-rastreio" placeholder="Código de rastreamento">
     </div>` : ''}
     <div class="form-group">
       <label>Observação (opcional)</label>
@@ -644,11 +644,16 @@ function npAtualizarCampos() {
     catEl.disabled = cats.length === 0;
     catEl.closest('.form-group').style.display = cats.length ? '' : 'none';
   }
-  // Material
-  const mats = NP_MATERIAIS[tipo] || [];
+  // Material (usa appConfig se disponível, senão fallback hardcoded)
+  const cfgMats = window.appConfig?.produtoMateriais || {};
+  const mats = cfgMats[tipo] ?? NP_MATERIAIS[tipo] ?? [];
   const matEl = document.getElementById('np-material');
   if (matEl) {
-    matEl.innerHTML = mats.map(m => `<option value="${m}">${m}</option>`).join('');
+    matEl.innerHTML = mats.length
+      ? mats.map(m => `<option value="${m}">${m}</option>`).join('')
+      : '<option value="">— Não aplicável —</option>';
+    matEl.disabled = mats.length === 0;
+    matEl.closest('.form-group').style.display = mats.length ? '' : 'none';
   }
 }
 
@@ -689,7 +694,8 @@ async function modalNovoPedido() {
   try { clientes = await api.clientes.listar(); } catch {}
   _npClientes = clientes; // store for searchable dropdown
 
-  const coresCheckboxes = NP_CORES.map(c =>
+  const coresList = window.appConfig?.cores?.length ? window.appConfig.cores : NP_CORES;
+  const coresCheckboxes = coresList.map(c =>
     `<label class="checkbox-row" style="min-width:130px"><input type="checkbox" class="np-cor-check" value="${c}"> ${c}</label>`
   ).join('');
 
