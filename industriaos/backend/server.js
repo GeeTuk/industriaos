@@ -137,7 +137,21 @@ app.get('/api/pedidos', authMiddleware, (req, res) => {
       if (podeVerEtapa(req.user, e, db)) etapasVisiveis.push(e);
     }
     if (etapasVisiveis.length === 0) return res.json([]);
-    where += ` AND p.etapa_atual IN (${etapasVisiveis.join(',')})`;
+
+    // Produção: também mostra pedidos com itens nas etapas visíveis
+    const hasProducaoStages = etapasVisiveis.some(e => e >= 4 && e <= 7);
+    if (hasProducaoStages) {
+      where += ` AND (
+        (COALESCE(p.tem_itens,0) = 0 AND p.etapa_atual IN (${etapasVisiveis.join(',')}))
+        OR (COALESCE(p.tem_itens,0) = 1 AND p.etapa_atual = 4 AND EXISTS (
+          SELECT 1 FROM pedido_itens pi
+          WHERE pi.pedido_id = p.id AND pi.etapa_atual IN (${etapasVisiveis.join(',')}) AND pi.status != 'concluido'
+        ))
+        OR (COALESCE(p.tem_itens,0) = 1 AND p.etapa_atual NOT IN (4,5,6,7) AND p.etapa_atual IN (${etapasVisiveis.join(',')}))
+      )`;
+    } else {
+      where += ` AND p.etapa_atual IN (${etapasVisiveis.join(',')})`;
+    }
   }
 
   const pedidos = db.prepare(`
@@ -176,8 +190,14 @@ app.get('/api/pedidos/:id', authMiddleware, (req, res) => {
   }
 
   // Produção/Designer: verifica etapa visível
-  if (!podeVerEtapa(req.user, pedido.etapa_atual, db) && !['admin', 'gerente_geral'].includes(req.user.perfil) && req.user.perfil !== 'vendedor') {
-    return res.status(403).json({ erro: 'Sem permissão para ver este pedido' });
+  if (!['admin', 'gerente_geral'].includes(req.user.perfil) && req.user.perfil !== 'vendedor') {
+    let canSee = podeVerEtapa(req.user, pedido.etapa_atual, db);
+    // Para pedidos com itens, verifica se usuário pode ver a etapa de algum item
+    if (!canSee && pedido.tem_itens) {
+      const etapasItens = db.prepare('SELECT DISTINCT etapa_atual FROM pedido_itens WHERE pedido_id = ?').all(pedido.id);
+      canSee = etapasItens.some(i => podeVerEtapa(req.user, i.etapa_atual, db));
+    }
+    if (!canSee) return res.status(403).json({ erro: 'Sem permissão para ver este pedido' });
   }
 
   const historico = db.prepare(`
@@ -188,13 +208,46 @@ app.get('/api/pedidos/:id', authMiddleware, (req, res) => {
 
   const arquivos = db.prepare('SELECT * FROM arquivos WHERE pedido_id = ? ORDER BY criado_em DESC').all(pedido.id);
 
-  res.json({ ...pedido, historico, arquivos });
+  const itens = pedido.tem_itens
+    ? db.prepare('SELECT * FROM pedido_itens WHERE pedido_id = ? ORDER BY ordem, id').all(pedido.id)
+    : [];
+
+  res.json({ ...pedido, historico, arquivos, itens });
 });
 
 app.post('/api/pedidos', authMiddleware, (req, res) => {
   if (!podeOperarEtapa(req.user, 1, db)) return res.status(403).json({ erro: 'Sem permissão para criar pedidos' });
 
-  const { tipo, cliente_id, descricao, dimensoes, material, cores, prazo, valor_orcamento, precisa_solvente, precisa_uv, categoria } = req.body;
+  const { tipo, cliente_id, descricao, dimensoes, material, cores, prazo, valor_orcamento, precisa_solvente, precisa_uv, categoria, itens } = req.body;
+
+  // ── Pedido com múltiplos itens ────────────────────────────────────
+  if (Array.isArray(itens) && itens.length > 0) {
+    if (!descricao) return res.status(400).json({ erro: 'Descrição do pedido obrigatória' });
+    const tipoBase = itens[0].tipo || 'INF';
+    const codigo = gerarCodigo(tipoBase);
+    const r = db.prepare(`
+      INSERT INTO pedidos (codigo, tipo, cliente_id, descricao, prazo, valor_orcamento, tem_itens, vendedor_id, etapa_atual)
+      VALUES (?, ?, ?, ?, ?, ?, 1, ?, 1)
+    `).run(codigo, tipoBase, cliente_id || null, descricao, prazo || null, valor_orcamento || null, req.user.id);
+
+    const pedidoId = r.lastInsertRowid;
+    const insertItem = db.prepare(`
+      INSERT INTO pedido_itens (pedido_id, ordem, tipo, categoria, descricao, material, cores, dimensoes, quantidade)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    for (let i = 0; i < itens.length; i++) {
+      const it = itens[i];
+      insertItem.run(pedidoId, i, it.tipo, it.categoria || null, it.descricao || null, it.material || null, it.cores || null, it.dimensoes || null, it.quantidade || 1);
+    }
+
+    db.prepare('INSERT INTO historico (pedido_id, user_id, tipo, etapa_de, etapa_para, descricao) VALUES (?, ?, ?, ?, ?, ?)').run(
+      pedidoId, req.user.id, 'criacao', null, 1,
+      `Pedido criado por ${req.user.nome} com ${itens.length} item(s)`
+    );
+    return res.json({ id: pedidoId, codigo, mensagem: 'Pedido criado' });
+  }
+
+  // ── Pedido simples (compatibilidade) ──────────────────────────────
   if (!tipo || !descricao) return res.status(400).json({ erro: 'Tipo e descrição obrigatórios' });
 
   const codigo = gerarCodigo(tipo);
@@ -216,6 +269,15 @@ app.post('/api/pedidos/:id/avancar', authMiddleware, (req, res) => {
 
   if (!podeOperarEtapa(req.user, pedido.etapa_atual, db)) {
     return res.status(403).json({ erro: 'Sem permissão para operar esta etapa' });
+  }
+
+  // Pedidos com itens: etapas 4-7 são controladas por item
+  if (pedido.tem_itens && pedido.etapa_atual === 4) {
+    // Verificar se todos os itens estão concluídos para liberar expedição
+    const pendentes = db.prepare("SELECT COUNT(*) as c FROM pedido_itens WHERE pedido_id = ? AND status != 'concluido'").get(pedido.id);
+    if (pendentes.c > 0) {
+      return res.status(400).json({ erro: `Ainda há ${pendentes.c} item(s) em produção. Avance cada item individualmente.` });
+    }
   }
 
   // ── ETAPA 8: EXPEDIÇÃO → CONCLUIR pedido ─────────────────────────
@@ -386,6 +448,193 @@ app.delete('/api/pedidos/:id', authMiddleware, requireAdmin, (req, res) => {
   res.json({ mensagem: 'Pedido excluído' });
 });
 
+// ── ITENS DE PEDIDO ───────────────────────────────────────────────
+// Helper: verifica se todos os itens estão concluídos e avança o pedido para expedição
+function checkAllItemsDone(pedidoId, userId) {
+  const pendentes = db.prepare("SELECT COUNT(*) as c FROM pedido_itens WHERE pedido_id = ? AND status != 'concluido'").get(pedidoId);
+  if (pendentes.c === 0) {
+    db.prepare("UPDATE pedidos SET etapa_atual = 8, atualizado_em = CURRENT_TIMESTAMP WHERE id = ?").run(pedidoId);
+    db.prepare('INSERT INTO historico (pedido_id, user_id, tipo, etapa_de, etapa_para, descricao) VALUES (?, ?, ?, ?, ?, ?)').run(
+      pedidoId, userId, 'avanco', 4, 8,
+      'Todos os itens concluídos — Pedido avançado automaticamente para Expedição'
+    );
+    return true;
+  }
+  return false;
+}
+
+// Adicionar item a pedido existente (admin, etapa <= 3)
+app.post('/api/pedidos/:id/itens', authMiddleware, requireAdmin, (req, res) => {
+  const pedido = db.prepare('SELECT * FROM pedidos WHERE id = ?').get(req.params.id);
+  if (!pedido) return res.status(404).json({ erro: 'Pedido não encontrado' });
+  if (pedido.etapa_atual > 3) return res.status(400).json({ erro: 'Não é possível adicionar itens após a aprovação' });
+
+  const { tipo, categoria, descricao, material, cores, dimensoes, quantidade } = req.body;
+  if (!tipo) return res.status(400).json({ erro: 'Tipo do item obrigatório' });
+
+  const ordem = db.prepare('SELECT COUNT(*) as c FROM pedido_itens WHERE pedido_id = ?').get(pedido.id).c;
+  const r = db.prepare(`
+    INSERT INTO pedido_itens (pedido_id, ordem, tipo, categoria, descricao, material, cores, dimensoes, quantidade)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(pedido.id, ordem, tipo, categoria || null, descricao || null, material || null, cores || null, dimensoes || null, quantidade || 1);
+
+  // Garantir que o pedido está marcado como tem_itens
+  db.prepare('UPDATE pedidos SET tem_itens = 1 WHERE id = ?').run(pedido.id);
+
+  db.prepare('INSERT INTO historico (pedido_id, user_id, tipo, etapa_de, etapa_para, descricao) VALUES (?, ?, ?, ?, ?, ?)').run(
+    pedido.id, req.user.id, 'edicao', pedido.etapa_atual, pedido.etapa_atual,
+    `Item "${tipo}${categoria ? ' / ' + categoria : ''}" adicionado por ${req.user.nome}`
+  );
+  res.json({ id: r.lastInsertRowid, mensagem: 'Item adicionado' });
+});
+
+// Editar item
+app.put('/api/pedidos/:id/itens/:iid', authMiddleware, requireAdmin, (req, res) => {
+  const item = db.prepare('SELECT * FROM pedido_itens WHERE id = ? AND pedido_id = ?').get(req.params.iid, req.params.id);
+  if (!item) return res.status(404).json({ erro: 'Item não encontrado' });
+
+  const pedido = db.prepare('SELECT * FROM pedidos WHERE id = ?').get(req.params.id);
+  if (pedido.etapa_atual > 3 && item.etapa_atual === 4 && item.status === 'pendente') {
+    // allow editing before arte starts
+  } else if (pedido.etapa_atual > 3) {
+    return res.status(400).json({ erro: 'Só é possível editar itens não iniciados' });
+  }
+
+  const { tipo, categoria, descricao, material, cores, dimensoes, quantidade } = req.body;
+  db.prepare(`UPDATE pedido_itens SET tipo=?, categoria=?, descricao=?, material=?, cores=?, dimensoes=?, quantidade=?, atualizado_em=CURRENT_TIMESTAMP WHERE id=?`)
+    .run(tipo, categoria || null, descricao || null, material || null, cores || null, dimensoes || null, quantidade || 1, item.id);
+  res.json({ mensagem: 'Item atualizado' });
+});
+
+// Remover item (admin, pedido etapa <= 3)
+app.delete('/api/pedidos/:id/itens/:iid', authMiddleware, requireAdmin, (req, res) => {
+  const item = db.prepare('SELECT * FROM pedido_itens WHERE id = ? AND pedido_id = ?').get(req.params.iid, req.params.id);
+  if (!item) return res.status(404).json({ erro: 'Item não encontrado' });
+
+  const pedido = db.prepare('SELECT * FROM pedidos WHERE id = ?').get(req.params.id);
+  if (pedido.etapa_atual > 3) return res.status(400).json({ erro: 'Não é possível remover itens após a aprovação' });
+
+  db.prepare('DELETE FROM pedido_itens WHERE id = ?').run(item.id);
+  db.prepare('INSERT INTO historico (pedido_id, user_id, tipo, etapa_de, etapa_para, descricao) VALUES (?, ?, ?, ?, ?, ?)').run(
+    pedido.id, req.user.id, 'edicao', pedido.etapa_atual, pedido.etapa_atual,
+    `Item removido por ${req.user.nome}`
+  );
+  res.json({ mensagem: 'Item removido' });
+});
+
+// Avançar etapa de um item individual
+app.post('/api/pedidos/:id/itens/:iid/avancar', authMiddleware, (req, res) => {
+  const { observacao, impressora, precisa_solvente, precisa_uv, fila } = req.body;
+  const item = db.prepare('SELECT * FROM pedido_itens WHERE id = ? AND pedido_id = ?').get(req.params.iid, req.params.id);
+  if (!item) return res.status(404).json({ erro: 'Item não encontrado' });
+  if (item.status === 'concluido') return res.status(400).json({ erro: 'Item já concluído' });
+
+  const pedido = db.prepare('SELECT * FROM pedidos WHERE id = ?').get(req.params.id);
+  if (!pedido) return res.status(404).json({ erro: 'Pedido não encontrado' });
+
+  if (!podeOperarEtapa(req.user, item.etapa_atual, db)) {
+    return res.status(403).json({ erro: 'Sem permissão para operar esta etapa' });
+  }
+
+  const nomeItem = `${item.tipo}${item.categoria ? ' / ' + item.categoria : ''}${item.dimensoes ? ' (' + item.dimensoes + ')' : ''}`;
+
+  // ── ETAPA 4: Arte → Impressão/Corte ───────────────────────────────
+  if (item.etapa_atual === 4) {
+    if (!impressora) return res.status(400).json({ erro: 'Selecione a impressora antes de avançar' });
+    db.prepare(`UPDATE pedido_itens SET impressora=?, precisa_solvente=?, precisa_uv=?,
+      corte_ok=0, impressao_ok=0, impressao_solvente_ok=0, impressao_uv_ok=0,
+      etapa_atual=5, atualizado_em=CURRENT_TIMESTAMP WHERE id=?`)
+      .run(impressora, precisa_solvente ? 1 : 0, precisa_uv ? 1 : 0, item.id);
+    db.prepare('INSERT INTO historico (pedido_id, user_id, tipo, etapa_de, etapa_para, descricao) VALUES (?, ?, ?, ?, ?, ?)').run(
+      pedido.id, req.user.id, 'avanco', 4, 5,
+      `Item "${nomeItem}" — Arte concluída por ${req.user.nome} (Impressora: ${impressora})${observacao ? ' — ' + observacao : ''}`
+    );
+    return res.json({ mensagem: `Arte concluída — Item avançado para Impressão/Corte`, etapa: 5 });
+  }
+
+  // ── ETAPA 5: Impressão/Corte em paralelo ─────────────────────────
+  if (item.etapa_atual === 5) {
+    const helper = (msg) => res.json({ mensagem: msg });
+
+    if (fila === 'corte') {
+      db.prepare('UPDATE pedido_itens SET corte_ok=1, atualizado_em=CURRENT_TIMESTAMP WHERE id=?').run(item.id);
+      db.prepare('INSERT INTO historico (pedido_id, user_id, tipo, etapa_de, etapa_para, descricao) VALUES (?, ?, ?, ?, ?, ?)').run(
+        pedido.id, req.user.id, 'parcial', 5, 5, `Item "${nomeItem}" — Corte concluído por ${req.user.nome}`
+      );
+      const upd = db.prepare('SELECT * FROM pedido_itens WHERE id=?').get(item.id);
+      if (!upd.impressao_ok) return helper('Corte registrado! ✓ Aguardando conclusão da Impressão.');
+
+    } else if (fila === 'solvente') {
+      db.prepare('UPDATE pedido_itens SET impressao_solvente_ok=1, atualizado_em=CURRENT_TIMESTAMP WHERE id=?').run(item.id);
+      db.prepare('INSERT INTO historico (pedido_id, user_id, tipo, etapa_de, etapa_para, descricao) VALUES (?, ?, ?, ?, ?, ?)').run(
+        pedido.id, req.user.id, 'parcial', 5, 5, `Item "${nomeItem}" — Impressão Solvente concluída por ${req.user.nome}`
+      );
+      const upd = db.prepare('SELECT * FROM pedido_itens WHERE id=?').get(item.id);
+      if (upd.precisa_uv && !upd.impressao_uv_ok) return helper('Solvente registrada! ✓ Aguardando UV.');
+      db.prepare('UPDATE pedido_itens SET impressao_ok=1, atualizado_em=CURRENT_TIMESTAMP WHERE id=?').run(item.id);
+      const upd2 = db.prepare('SELECT * FROM pedido_itens WHERE id=?').get(item.id);
+      if (!upd2.corte_ok) return helper('Impressão concluída! ✓ Aguardando Corte.');
+
+    } else if (fila === 'uv') {
+      db.prepare('UPDATE pedido_itens SET impressao_uv_ok=1, atualizado_em=CURRENT_TIMESTAMP WHERE id=?').run(item.id);
+      db.prepare('INSERT INTO historico (pedido_id, user_id, tipo, etapa_de, etapa_para, descricao) VALUES (?, ?, ?, ?, ?, ?)').run(
+        pedido.id, req.user.id, 'parcial', 5, 5, `Item "${nomeItem}" — Impressão UV concluída por ${req.user.nome}`
+      );
+      const upd = db.prepare('SELECT * FROM pedido_itens WHERE id=?').get(item.id);
+      if (upd.precisa_solvente && !upd.impressao_solvente_ok) return helper('UV registrada! ✓ Aguardando Solvente.');
+      db.prepare('UPDATE pedido_itens SET impressao_ok=1, atualizado_em=CURRENT_TIMESTAMP WHERE id=?').run(item.id);
+      const upd2 = db.prepare('SELECT * FROM pedido_itens WHERE id=?').get(item.id);
+      if (!upd2.corte_ok) return helper('Impressão concluída! ✓ Aguardando Corte.');
+
+    } else {
+      // Impressão simples
+      db.prepare('UPDATE pedido_itens SET impressao_ok=1, atualizado_em=CURRENT_TIMESTAMP WHERE id=?').run(item.id);
+      db.prepare('INSERT INTO historico (pedido_id, user_id, tipo, etapa_de, etapa_para, descricao) VALUES (?, ?, ?, ?, ?, ?)').run(
+        pedido.id, req.user.id, 'parcial', 5, 5, `Item "${nomeItem}" — Impressão concluída por ${req.user.nome}`
+      );
+      const upd = db.prepare('SELECT * FROM pedido_itens WHERE id=?').get(item.id);
+      if (!upd.corte_ok) return helper('Impressão registrada! ✓ Aguardando Corte.');
+    }
+
+    // Ambos prontos → Costura (6)
+    db.prepare('UPDATE pedido_itens SET etapa_atual=6, atualizado_em=CURRENT_TIMESTAMP WHERE id=?').run(item.id);
+    db.prepare('INSERT INTO historico (pedido_id, user_id, tipo, etapa_de, etapa_para, descricao) VALUES (?, ?, ?, ?, ?, ?)').run(
+      pedido.id, req.user.id, 'avanco', 5, 6, `Item "${nomeItem}" — Impressão e Corte concluídos, avançado para Costura por ${req.user.nome}`
+    );
+    return res.json({ mensagem: 'Impressão e Corte concluídos! Item avançado para Costura.', etapa: 6 });
+  }
+
+  // ── ETAPA 6: Costura → Motor (INF) ou Concluído ───────────────────
+  if (item.etapa_atual === 6) {
+    if (item.tipo === 'INF') {
+      db.prepare('UPDATE pedido_itens SET etapa_atual=7, atualizado_em=CURRENT_TIMESTAMP WHERE id=?').run(item.id);
+      db.prepare('INSERT INTO historico (pedido_id, user_id, tipo, etapa_de, etapa_para, descricao) VALUES (?, ?, ?, ?, ?, ?)').run(
+        pedido.id, req.user.id, 'avanco', 6, 7, `Item "${nomeItem}" — Costura concluída, avançado para Motor por ${req.user.nome}${observacao ? ' — ' + observacao : ''}`
+      );
+      return res.json({ mensagem: 'Costura concluída! Item avançado para Motor.', etapa: 7 });
+    } else {
+      db.prepare("UPDATE pedido_itens SET etapa_atual=8, status='concluido', atualizado_em=CURRENT_TIMESTAMP WHERE id=?").run(item.id);
+      db.prepare('INSERT INTO historico (pedido_id, user_id, tipo, etapa_de, etapa_para, descricao) VALUES (?, ?, ?, ?, ?, ?)').run(
+        pedido.id, req.user.id, 'avanco', 6, 8, `Item "${nomeItem}" — Costura concluída, item PRONTO por ${req.user.nome}${observacao ? ' — ' + observacao : ''}`
+      );
+      const avancou = checkAllItemsDone(pedido.id, req.user.id);
+      return res.json({ mensagem: 'Item concluído! ' + (avancou ? 'Todos os itens prontos — Pedido avançado para Expedição.' : ''), concluido: true });
+    }
+  }
+
+  // ── ETAPA 7: Motor → Concluído ────────────────────────────────────
+  if (item.etapa_atual === 7) {
+    db.prepare("UPDATE pedido_itens SET etapa_atual=8, status='concluido', atualizado_em=CURRENT_TIMESTAMP WHERE id=?").run(item.id);
+    db.prepare('INSERT INTO historico (pedido_id, user_id, tipo, etapa_de, etapa_para, descricao) VALUES (?, ?, ?, ?, ?, ?)').run(
+      pedido.id, req.user.id, 'avanco', 7, 8, `Item "${nomeItem}" — Motor concluído, item PRONTO por ${req.user.nome}${observacao ? ' — ' + observacao : ''}`
+    );
+    const avancou = checkAllItemsDone(pedido.id, req.user.id);
+    return res.json({ mensagem: 'Item concluído! ' + (avancou ? 'Todos os itens prontos — Pedido avançado para Expedição.' : ''), concluido: true });
+  }
+
+  return res.status(400).json({ erro: 'Etapa do item inválida para avanço' });
+});
+
 // ── DASHBOARD / MÉTRICAS ──────────────────────────────────────────
 app.get('/api/dashboard', authMiddleware, (req, res) => {
   const hoje = new Date().toISOString().split('T')[0];
@@ -458,18 +707,35 @@ app.get('/api/dashboard', authMiddleware, (req, res) => {
     }
     if (etapasOperar.length > 0) {
       const inCl = etapasOperar.join(',');
-      const total = db.prepare(`SELECT COUNT(*) as c FROM pedidos WHERE etapa_atual IN (${inCl}) AND status = 'ativo'`).get().c;
-      const urgs  = db.prepare(`SELECT COUNT(*) as c FROM pedidos WHERE etapa_atual IN (${inCl}) AND urgente = 1 AND status = 'ativo'`).get().c;
+      const hasProducao = etapasOperar.some(e => e >= 4 && e <= 7);
+      const filaWhere = hasProducao
+        ? `(
+            (COALESCE(p.tem_itens,0) = 0 AND p.etapa_atual IN (${inCl}))
+            OR (COALESCE(p.tem_itens,0) = 1 AND p.etapa_atual = 4 AND EXISTS (
+              SELECT 1 FROM pedido_itens pi WHERE pi.pedido_id = p.id AND pi.etapa_atual IN (${inCl}) AND pi.status != 'concluido'
+            ))
+          )`
+        : `p.etapa_atual IN (${inCl})`;
+
+      const total = db.prepare(`SELECT COUNT(*) as c FROM pedidos p WHERE p.status = 'ativo' AND ${filaWhere}`).get().c;
+      const urgs  = db.prepare(`SELECT COUNT(*) as c FROM pedidos p WHERE p.urgente = 1 AND p.status = 'ativo' AND ${filaWhere}`).get().c;
       const lista = db.prepare(`
-        SELECT p.id, p.codigo, p.tipo, p.etapa_atual, p.prazo, p.urgente,
+        SELECT p.id, p.codigo, p.tipo, p.etapa_atual, p.tem_itens, p.prazo, p.urgente,
                p.corte_ok, p.impressao_ok, c.razao_social as cliente_nome
         FROM pedidos p LEFT JOIN clientes c ON p.cliente_id = c.id
-        WHERE p.etapa_atual IN (${inCl}) AND p.status = 'ativo'
+        WHERE p.status = 'ativo' AND ${filaWhere}
         ORDER BY p.urgente DESC, CASE WHEN p.prazo IS NULL THEN 1 ELSE 0 END, p.prazo ASC
         LIMIT 8
       `).all();
       const etapasObjs = etapasOperar.map(e => {
-        const cnt = db.prepare(`SELECT COUNT(*) as c FROM pedidos WHERE etapa_atual = ? AND status = 'ativo'`).get(e);
+        const cnt = hasProducao && e >= 4 && e <= 7
+          ? db.prepare(`SELECT COUNT(*) as c FROM pedidos p WHERE p.status = 'ativo' AND (
+              (COALESCE(p.tem_itens,0) = 0 AND p.etapa_atual = ?)
+              OR (COALESCE(p.tem_itens,0) = 1 AND p.etapa_atual = 4 AND EXISTS (
+                SELECT 1 FROM pedido_itens pi WHERE pi.pedido_id = p.id AND pi.etapa_atual = ? AND pi.status != 'concluido'
+              ))
+            )`).get(e, e)
+          : db.prepare(`SELECT COUNT(*) as c FROM pedidos WHERE etapa_atual = ? AND status = 'ativo'`).get(e);
         return { etapa: e, nome: ETAPAS[e]?.nome, total: cnt.c };
       });
       minhaFila = { total, urgentes: urgs, etapas: etapasObjs, lista };

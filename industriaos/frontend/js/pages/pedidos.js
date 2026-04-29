@@ -119,10 +119,12 @@ async function abrirFichaPedido(id) {
     const canOperar = currentUser.etapasOperar?.includes(pedido.etapa_atual) || ['admin','gerente_geral'].includes(currentUser.perfil);
     const isAdmin = ['admin','gerente_geral'].includes(currentUser.perfil);
     const showValor = ['admin','gerente_geral','vendedor'].includes(currentUser.perfil);
+    const temItens = !!(pedido.tem_itens && pedido.itens?.length > 0);
 
-    // Etapas que o tipo de produto pula (Motor=7 só para INF e BAQ)
+    // Etapas que o tipo de produto pula (Motor=7 só para INF)
     const etapasAtivas = [1,2,3,4,5,6];
-    if (pedido.tipo === 'INF') etapasAtivas.push(7);
+    if (!temItens && pedido.tipo === 'INF') etapasAtivas.push(7);
+    else if (temItens) { etapasAtivas.push(7); } // multi-item: include all stages in progress bar
     etapasAtivas.push(8);
 
     const progressBar = Array.from({length: 8}, (_,i) => {
@@ -154,40 +156,51 @@ async function abrirFichaPedido(id) {
     // Ações disponíveis
     let acoes = '';
     if (canOperar && pedido.status === 'ativo') {
-      if (pedido.etapa_atual < 8) {
-        // Etapa 5: Impressão e Corte em paralelo
-        if (pedido.etapa_atual === 5) {
-          const isCorte = ['corte','admin','gerente_geral'].includes(currentUser.perfil);
-          const isImpressao = ['impressao','admin','gerente_geral'].includes(currentUser.perfil);
-
-          // Botões de Corte
-          if (isCorte && !pedido.corte_ok) {
-            acoes += `<button class="btn btn-success btn-sm" onclick="avancarParalelo(${pedido.id}, 'corte')">✓ Corte Pronto</button>`;
-          }
-
-          // Botões de Impressão
-          if (isImpressao && !pedido.impressao_ok) {
-            if (pedido.precisa_solvente && !pedido.impressao_solvente_ok) {
-              acoes += `<button class="btn btn-success btn-sm" onclick="avancarParalelo(${pedido.id}, 'solvente')">✓ Solvente Pronta</button>`;
-            }
-            if (pedido.precisa_uv && !pedido.impressao_uv_ok) {
-              acoes += `<button class="btn btn-success btn-sm" onclick="avancarParalelo(${pedido.id}, 'uv')">✓ UV Pronta</button>`;
-            }
-            if (!pedido.precisa_solvente && !pedido.precisa_uv) {
-              acoes += `<button class="btn btn-success btn-sm" onclick="avancarParalelo(${pedido.id}, 'impressao')">✓ Impressão Pronta</button>`;
-            }
-          }
-
-          if (!acoes) {
-            acoes += `<span style="color:var(--text3);font-size:13px">⏳ Aguardando equipes...</span>`;
-          }
+      if (temItens) {
+        // ── Pedido com itens: etapas 1-3 e 8 no nível do pedido ──────
+        if (pedido.etapa_atual <= 3) {
+          acoes += `<button class="btn btn-success btn-sm" onclick="modalAvancar(${pedido.id}, ${pedido.etapa_atual}, true)">→ Avançar Etapa</button>`;
           acoes += `<button class="btn btn-orange btn-sm" onclick="modalDevolver(${pedido.id}, ${pedido.etapa_atual})">↩ Devolver</button>`;
-        } else {
-          acoes += `<button class="btn btn-success btn-sm" onclick="modalAvancar(${pedido.id}, ${pedido.etapa_atual})">→ Avançar Etapa</button>`;
-          acoes += `<button class="btn btn-orange btn-sm" onclick="modalDevolver(${pedido.id}, ${pedido.etapa_atual})">↩ Devolver</button>`;
+        } else if (pedido.etapa_atual === 8) {
+          acoes += `<button class="btn btn-success btn-sm" onclick="modalAvancar(${pedido.id}, ${pedido.etapa_atual}, true)">🚚 Expedir Pedido</button>`;
+        } else if (pedido.etapa_atual === 4) {
+          // Em produção: verificar se todos os itens estão prontos
+          const todosOk = pedido.itens?.every(it => it.status === 'concluido');
+          if (todosOk) {
+            acoes += `<button class="btn btn-success btn-sm" onclick="modalAvancar(${pedido.id}, 8, true)">🚚 Todos prontos — Expedir</button>`;
+          } else {
+            acoes += `<span style="color:var(--text3);font-size:12px">⏳ Avance cada item na tabela abaixo</span>`;
+          }
         }
       } else {
-        acoes += `<button class="btn btn-success btn-sm" onclick="modalAvancar(${pedido.id}, ${pedido.etapa_atual})">🚚 Expedir Pedido</button>`;
+        // ── Pedido simples (sem itens) — lógica original ─────────────
+        if (pedido.etapa_atual < 8) {
+          if (pedido.etapa_atual === 5) {
+            const isCorte = ['corte','admin','gerente_geral'].includes(currentUser.perfil);
+            const isImpressao = ['impressao','admin','gerente_geral'].includes(currentUser.perfil);
+            if (isCorte && !pedido.corte_ok) {
+              acoes += `<button class="btn btn-success btn-sm" onclick="avancarParalelo(${pedido.id}, 'corte')">✓ Corte Pronto</button>`;
+            }
+            if (isImpressao && !pedido.impressao_ok) {
+              if (pedido.precisa_solvente && !pedido.impressao_solvente_ok) {
+                acoes += `<button class="btn btn-success btn-sm" onclick="avancarParalelo(${pedido.id}, 'solvente')">✓ Solvente Pronta</button>`;
+              }
+              if (pedido.precisa_uv && !pedido.impressao_uv_ok) {
+                acoes += `<button class="btn btn-success btn-sm" onclick="avancarParalelo(${pedido.id}, 'uv')">✓ UV Pronta</button>`;
+              }
+              if (!pedido.precisa_solvente && !pedido.precisa_uv) {
+                acoes += `<button class="btn btn-success btn-sm" onclick="avancarParalelo(${pedido.id}, 'impressao')">✓ Impressão Pronta</button>`;
+              }
+            }
+            if (!acoes) acoes += `<span style="color:var(--text3);font-size:13px">⏳ Aguardando equipes...</span>`;
+            acoes += `<button class="btn btn-orange btn-sm" onclick="modalDevolver(${pedido.id}, ${pedido.etapa_atual})">↩ Devolver</button>`;
+          } else {
+            acoes += `<button class="btn btn-success btn-sm" onclick="modalAvancar(${pedido.id}, ${pedido.etapa_atual})">→ Avançar Etapa</button>`;
+            acoes += `<button class="btn btn-orange btn-sm" onclick="modalDevolver(${pedido.id}, ${pedido.etapa_atual})">↩ Devolver</button>`;
+          }
+        } else {
+          acoes += `<button class="btn btn-success btn-sm" onclick="modalAvancar(${pedido.id}, ${pedido.etapa_atual})">🚚 Expedir Pedido</button>`;
+        }
       }
     }
     if (isAdmin) {
@@ -337,12 +350,77 @@ async function abrirFichaPedido(id) {
         <div class="info-item"><div class="info-label">Descrição</div><div class="info-value">${pedido.descricao || '—'}</div></div>
       </div>
 
-      ${pedido.dimensoes || pedido.material || pedido.cores ? `
+      ${!temItens && (pedido.dimensoes || pedido.material || pedido.cores) ? `
       <div class="info-row">
         ${pedido.dimensoes ? `<div class="info-item"><div class="info-label">Dimensões</div><div class="info-value">${pedido.dimensoes}</div></div>` : ''}
         ${pedido.material ? `<div class="info-item"><div class="info-label">Material</div><div class="info-value">${pedido.material}</div></div>` : ''}
         ${pedido.cores ? `<div class="info-item"><div class="info-label">Cores</div><div class="info-value">${pedido.cores}</div></div>` : ''}
       </div>` : ''}
+
+      ${temItens ? (() => {
+        const canManageItems = isAdmin && pedido.etapa_atual <= 3;
+        const itensRows = (pedido.itens || []).map((item, idx) => {
+          const etapaTag = tagEtapaItem(item.etapa_atual, item.status);
+          const paraleloStatus = renderItemParaleloStatus(item);
+
+          let itemAcoes = '';
+          if (item.status !== 'concluido' && pedido.status === 'ativo') {
+            const canOperarItem = currentUser.etapasOperar?.includes(item.etapa_atual) || isAdmin;
+            if (canOperarItem) {
+              if (item.etapa_atual === 5) {
+                const isCorte = ['corte','admin','gerente_geral'].includes(currentUser.perfil);
+                const isImpressao = ['impressao','admin','gerente_geral'].includes(currentUser.perfil);
+                if (isCorte && !item.corte_ok)
+                  itemAcoes += `<button class="btn btn-success btn-sm" style="font-size:10px;padding:3px 7px;margin:1px" onclick="avancarItemParalelo(${pedido.id}, ${item.id}, 'corte')">✂ Corte</button>`;
+                if (isImpressao && !item.impressao_ok) {
+                  if (item.precisa_solvente && !item.impressao_solvente_ok)
+                    itemAcoes += `<button class="btn btn-success btn-sm" style="font-size:10px;padding:3px 7px;margin:1px" onclick="avancarItemParalelo(${pedido.id}, ${item.id}, 'solvente')">🖨 Solv</button>`;
+                  if (item.precisa_uv && !item.impressao_uv_ok)
+                    itemAcoes += `<button class="btn btn-success btn-sm" style="font-size:10px;padding:3px 7px;margin:1px" onclick="avancarItemParalelo(${pedido.id}, ${item.id}, 'uv')">🖨 UV</button>`;
+                  if (!item.precisa_solvente && !item.precisa_uv)
+                    itemAcoes += `<button class="btn btn-success btn-sm" style="font-size:10px;padding:3px 7px;margin:1px" onclick="avancarItemParalelo(${pedido.id}, ${item.id}, 'impressao')">🖨 Imp</button>`;
+                }
+              } else {
+                itemAcoes += `<button class="btn btn-primary btn-sm" style="font-size:10px;padding:3px 8px" onclick="modalAvancarItem(${pedido.id}, ${item.id}, ${item.etapa_atual}, '${item.tipo}')">→</button>`;
+              }
+            }
+            if (canManageItems)
+              itemAcoes += `<button class="btn btn-danger btn-sm" style="font-size:10px;padding:3px 6px;margin:1px" onclick="confirmarRemoverItem(${pedido.id}, ${item.id})">✕</button>`;
+          }
+
+          const impressoraTag = item.impressora ? `<span style="font-size:10px;color:var(--text3);display:block">🖨 ${item.impressora}</span>` : '';
+
+          return `
+            <tr>
+              <td style="font-family:var(--font-mono);font-size:11px;color:var(--text3)">${idx + 1}</td>
+              <td>${tagTipo(item.tipo)}</td>
+              <td style="font-size:12px">${item.categoria || '—'}</td>
+              <td style="font-family:var(--font-mono);font-size:11px">${item.dimensoes || '—'}</td>
+              <td style="font-size:12px">${item.material || '—'}</td>
+              <td style="font-size:11px;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${item.cores || ''}">${item.cores || '—'}</td>
+              <td style="text-align:center;font-family:var(--font-mono);font-size:12px">${item.quantidade}</td>
+              <td>${etapaTag}${impressoraTag}${paraleloStatus}</td>
+              <td style="white-space:nowrap">${itemAcoes || ''}</td>
+            </tr>`;
+        }).join('');
+
+        const concluidos = (pedido.itens || []).filter(i => i.status === 'concluido').length;
+        return `
+          <hr class="divider">
+          <div class="section-label" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+            <span>Itens do Pedido <span style="color:var(--text3);font-weight:400;font-size:12px">(${concluidos}/${pedido.itens.length} prontos)</span></span>
+            ${canManageItems ? `<button class="btn btn-ghost btn-sm" onclick="fecharModalForce();setTimeout(()=>modalAdicionarItem(${pedido.id}),200)">+ Adicionar Item</button>` : ''}
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr>
+                <th>#</th><th>Tipo</th><th>Categoria</th><th>Dimensões</th>
+                <th>Material</th><th>Cores</th><th>Qtd</th><th>Etapa</th><th>Ações</th>
+              </tr></thead>
+              <tbody>${itensRows || '<tr><td colspan="9" style="text-align:center;color:var(--text3)">Nenhum item</td></tr>'}</tbody>
+            </table>
+          </div>`;
+      })() : ''}
 
       ${(pedido.transportadora || pedido.codigo_rastreio) ? `
       <div class="info-row">
@@ -414,8 +492,8 @@ async function avancarParalelo(id, fila) {
   } catch (e) { toast(e.message, 'error'); }
 }
 
-function modalAvancar(id, etapaAtual) {
-  const isArte = etapaAtual === 4;
+function modalAvancar(id, etapaAtual, temItens = false) {
+  const isArte = etapaAtual === 4 && !temItens; // Arte só para pedidos simples (sem itens)
   const isExpedicao = etapaAtual === 8;
 
   const body = `
@@ -451,17 +529,17 @@ function modalAvancar(id, etapaAtual) {
   `;
   const footer = `
     <button class="btn btn-ghost" onclick="fecharModalForce()">Cancelar</button>
-    <button class="btn btn-success" onclick="confirmarAvancar(${id}, ${etapaAtual})">
+    <button class="btn btn-success" onclick="confirmarAvancar(${id}, ${etapaAtual}, ${temItens})">
       ${isExpedicao ? '🚚 Confirmar Expedição' : '→ Confirmar Avanço'}
     </button>
   `;
   abrirModal(isExpedicao ? 'Expedir Pedido' : 'Avançar Etapa', body, footer);
 }
 
-async function confirmarAvancar(id, etapaAtual) {
+async function confirmarAvancar(id, etapaAtual, temItens = false) {
   const obs = document.getElementById('obs-avancar')?.value;
   const dados = { observacao: obs };
-  if (etapaAtual === 4) {
+  if (etapaAtual === 4 && !temItens) {
     const impressora = document.getElementById('imp-impressora')?.value;
     if (!impressora) { toast('Selecione a impressora antes de avançar.', 'error'); return; }
     dados.impressora = impressora;
@@ -618,6 +696,188 @@ function npSelecionarCliente(id, nome) {
   npFecharDropdownCliente();
 }
 
+// ── HELPERS DE ITEM ───────────────────────────────────────────────
+function tagEtapaItem(etapa, status) {
+  if (status === 'concluido') return '<span class="tag tag-green" style="font-size:11px">✅ Pronto</span>';
+  const map = {
+    4: '<span class="tag tag-blue" style="font-size:11px">🎨 Arte</span>',
+    5: '<span class="tag tag-orange" style="font-size:11px">🖨 Impressão/Corte</span>',
+    6: '<span class="tag" style="font-size:11px;background:rgba(130,80,200,0.18);color:#a060d0">🧵 Costura</span>',
+    7: '<span class="tag tag-yellow" style="font-size:11px">⚙️ Motor</span>',
+  };
+  return map[etapa] || `<span class="tag" style="font-size:11px">Etapa ${etapa}</span>`;
+}
+
+function renderItemParaleloStatus(item) {
+  if (item.etapa_atual !== 5 && item.status !== 'concluido') return '';
+  const c = item.corte_ok ? '<span style="color:var(--green);font-size:10px">✂✓</span>' : '<span style="color:var(--text3);font-size:10px">✂?</span>';
+  const p = item.impressao_ok ? '<span style="color:var(--green);font-size:10px"> 🖨✓</span>' : '<span style="color:var(--text3);font-size:10px"> 🖨?</span>';
+  return `<div style="display:flex;gap:2px;margin-top:2px">${c}${p}</div>`;
+}
+
+// ── ITEM: AVANÇAR ─────────────────────────────────────────────────
+function modalAvancarItem(pedidoId, itemId, etapaAtual, tipoItem) {
+  const isArte = etapaAtual === 4;
+  const nomeEtapa = { 4: 'Arte', 6: 'Costura', 7: 'Motor' }[etapaAtual] || `Etapa ${etapaAtual}`;
+
+  const body = `
+    ${isArte ? `
+    <div class="form-group">
+      <label>Impressora *</label>
+      <select id="ai-impressora" style="width:100%">
+        <option value="">— Selecione a impressora —</option>
+        ${(window.appConfig?.impressoras || [{nome:'Mimaki UV (100-160)'},{nome:'Mimaki Solvente (150-160)'}])
+          .map(i => `<option value="${i.nome}">🖨️ ${i.nome}</option>`).join('')}
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Tratamento de impressão</label>
+      <div style="display:flex;gap:20px;margin-top:8px">
+        <label class="checkbox-row"><input type="checkbox" id="ai-solvente"> Solvente</label>
+        <label class="checkbox-row"><input type="checkbox" id="ai-uv"> UV</label>
+      </div>
+    </div>` : ''}
+    <div class="form-group">
+      <label>Observação (opcional)</label>
+      <textarea id="ai-obs" placeholder="Informação adicional..."></textarea>
+    </div>
+  `;
+  const footer = `
+    <button class="btn btn-ghost" onclick="fecharModalForce()">Cancelar</button>
+    <button class="btn btn-success" onclick="confirmarAvancarItem(${pedidoId}, ${itemId}, ${etapaAtual})">
+      ${isArte ? '🖨 Arte Pronta → Impressão' : `→ ${nomeEtapa} Pronto`}
+    </button>
+  `;
+  abrirModal(`Avançar Item — ${nomeEtapa}`, body, footer);
+}
+
+async function confirmarAvancarItem(pedidoId, itemId, etapaAtual) {
+  const dados = { observacao: document.getElementById('ai-obs')?.value };
+  if (etapaAtual === 4) {
+    const impressora = document.getElementById('ai-impressora')?.value;
+    if (!impressora) { toast('Selecione a impressora antes de avançar.', 'error'); return; }
+    dados.impressora = impressora;
+    dados.precisa_solvente = document.getElementById('ai-solvente')?.checked;
+    dados.precisa_uv = document.getElementById('ai-uv')?.checked;
+  }
+  try {
+    const res = await api.pedidos.avancarItem(pedidoId, itemId, dados);
+    toast(res.mensagem, 'success');
+    fecharModalForce();
+    setTimeout(() => abrirFichaPedido(pedidoId), 300);
+    carregarPedidos();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function avancarItemParalelo(pedidoId, itemId, fila) {
+  try {
+    const res = await api.pedidos.avancarItem(pedidoId, itemId, { fila });
+    toast(res.mensagem, 'success');
+    fecharModalForce();
+    setTimeout(() => abrirFichaPedido(pedidoId), 300);
+    carregarPedidos();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+// ── ITEM: ADICIONAR A PEDIDO EXISTENTE ───────────────────────────
+function modalAdicionarItem(pedidoId) {
+  const body = `
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Tipo *</label>
+        <select id="mai-tipo" onchange="maiUpdateCampos()">
+          <option value="INF">Inflável</option>
+          <option value="LON">Lona</option>
+          <option value="ADH">Adesivo</option>
+          <option value="PLC">Placa</option>
+          <option value="BAQ">Balão AR</option>
+        </select>
+      </div>
+      <div class="form-group" id="mai-categoria-group">
+        <label>Categoria</label>
+        <select id="mai-categoria"></select>
+      </div>
+      <div class="form-group">
+        <label>Material</label>
+        <select id="mai-material"></select>
+      </div>
+      <div class="form-group">
+        <label>Dimensões</label>
+        <input type="text" id="mai-dimensoes" placeholder="ex: 3m x 2m">
+      </div>
+      <div class="form-group">
+        <label>Cores</label>
+        <input type="text" id="mai-cores" placeholder="ex: Vermelho, Azul Omni">
+      </div>
+      <div class="form-group">
+        <label>Quantidade</label>
+        <input type="number" id="mai-quantidade" value="1" min="1">
+      </div>
+      <div class="form-group span2">
+        <label>Descrição do item</label>
+        <input type="text" id="mai-descricao" placeholder="Descrição específica deste item (opcional)">
+      </div>
+    </div>
+  `;
+  const footer = `
+    <button class="btn btn-ghost" onclick="fecharModalForce()">Cancelar</button>
+    <button class="btn btn-primary" onclick="confirmarAdicionarItem(${pedidoId})">+ Adicionar Item</button>
+  `;
+  abrirModal('Adicionar Item ao Pedido', body, footer);
+  setTimeout(maiUpdateCampos, 0);
+}
+
+function maiUpdateCampos() {
+  const tipo = document.getElementById('mai-tipo')?.value;
+  if (!tipo) return;
+  const cfgCats = window.appConfig?.produtoCategorias || {};
+  const cats = cfgCats[tipo] ?? NP_CATEGORIAS[tipo] ?? [];
+  const catEl = document.getElementById('mai-categoria');
+  const catGrp = document.getElementById('mai-categoria-group');
+  if (catEl) {
+    catEl.innerHTML = cats.length ? cats.map(c => `<option value="${c}">${c}</option>`).join('') : '<option value="">— Não aplicável —</option>';
+    catEl.disabled = cats.length === 0;
+    if (catGrp) catGrp.style.display = cats.length ? '' : 'none';
+  }
+  const cfgMats = window.appConfig?.produtoMateriais || {};
+  const mats = cfgMats[tipo] ?? NP_MATERIAIS[tipo] ?? [];
+  const matEl = document.getElementById('mai-material');
+  if (matEl) {
+    matEl.innerHTML = mats.length ? mats.map(m => `<option value="${m}">${m}</option>`).join('') : '<option value="">— Não aplicável —</option>';
+    matEl.disabled = mats.length === 0;
+  }
+}
+
+async function confirmarAdicionarItem(pedidoId) {
+  const tipo = document.getElementById('mai-tipo')?.value;
+  if (!tipo) { toast('Selecione o tipo', 'error'); return; }
+  const dados = {
+    tipo,
+    categoria: document.getElementById('mai-categoria')?.value || null,
+    material: document.getElementById('mai-material')?.value || null,
+    dimensoes: document.getElementById('mai-dimensoes')?.value || null,
+    cores: document.getElementById('mai-cores')?.value || null,
+    quantidade: parseInt(document.getElementById('mai-quantidade')?.value) || 1,
+    descricao: document.getElementById('mai-descricao')?.value || null,
+  };
+  try {
+    await api.pedidos.adicionarItem(pedidoId, dados);
+    toast('Item adicionado!', 'success');
+    fecharModalForce();
+    setTimeout(() => abrirFichaPedido(pedidoId), 300);
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function confirmarRemoverItem(pedidoId, itemId) {
+  if (!confirm('Remover este item do pedido?')) return;
+  try {
+    await api.pedidos.removerItem(pedidoId, itemId);
+    toast('Item removido', 'success');
+    fecharModalForce();
+    setTimeout(() => abrirFichaPedido(pedidoId), 300);
+  } catch (e) { toast(e.message, 'error'); }
+}
+
 // ── CATÁLOGOS ─────────────────────────────────────────────────────
 const NP_CATEGORIAS = {
   INF: ['Tenda Casa', 'Tenda Padrão', 'Tenda Aranha', 'Portal', 'Roof Top', '3D', 'Colchão', 'Túnel'],
@@ -688,33 +948,126 @@ async function npCriarCliente() {
   } catch (e) { toast(e.message, 'error'); }
 }
 
-// ── NOVO PEDIDO ───────────────────────────────────────────────────
+// ── NOVO PEDIDO (com itens) ────────────────────────────────────────
+let _npItemSeq = 0;
+
+function npItemCard(seq) {
+  const tipos = ['INF','LON','ADH','PLC','BAQ'];
+  const tipoOpts = tipos.map(t => `<option value="${t}">${TIPO_LABELS[t] || t}</option>`).join('');
+  return `
+    <div class="np-item-card" id="np-item-card-${seq}" data-seq="${seq}" style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <span style="font-size:13px;font-weight:600;color:var(--accent)">Item #<span class="np-item-num"></span></span>
+        <button type="button" class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px;color:var(--red)" onclick="npRemoveItem(${seq})">✕ Remover</button>
+      </div>
+      <div class="form-grid" style="gap:10px">
+        <div class="form-group">
+          <label style="font-size:11px">Tipo *</label>
+          <select id="np-item-tipo-${seq}" onchange="npItemUpdateCampos(${seq})">${tipoOpts}</select>
+        </div>
+        <div class="form-group" id="np-item-cat-grp-${seq}">
+          <label style="font-size:11px">Categoria</label>
+          <select id="np-item-categoria-${seq}"></select>
+        </div>
+        <div class="form-group">
+          <label style="font-size:11px">Material</label>
+          <select id="np-item-material-${seq}"></select>
+        </div>
+        <div class="form-group">
+          <label style="font-size:11px">Dimensões</label>
+          <input type="text" id="np-item-dimensoes-${seq}" placeholder="ex: 3m × 2m">
+        </div>
+        <div class="form-group">
+          <label style="font-size:11px">Cores</label>
+          <input type="text" id="np-item-cores-${seq}" placeholder="ex: Vermelho, Azul Omni">
+        </div>
+        <div class="form-group">
+          <label style="font-size:11px">Quantidade</label>
+          <input type="number" id="np-item-quantidade-${seq}" value="1" min="1" style="width:80px">
+        </div>
+        <div class="form-group span2">
+          <label style="font-size:11px">Descrição do item <span style="color:var(--text3);font-weight:400">(opcional)</span></label>
+          <input type="text" id="np-item-descricao-${seq}" placeholder="Observações específicas deste item...">
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function npAddItem() {
+  _npItemSeq++;
+  const seq = _npItemSeq;
+  const list = document.getElementById('np-itens-list');
+  if (!list) return;
+  const div = document.createElement('div');
+  div.innerHTML = npItemCard(seq);
+  list.appendChild(div.firstElementChild);
+  npItemUpdateCampos(seq);
+  npRenumberItems();
+  const empty = document.getElementById('np-itens-empty');
+  if (empty) empty.style.display = 'none';
+}
+
+function npRemoveItem(seq) {
+  document.getElementById(`np-item-card-${seq}`)?.remove();
+  npRenumberItems();
+  const remaining = document.querySelectorAll('.np-item-card').length;
+  const empty = document.getElementById('np-itens-empty');
+  if (empty) empty.style.display = remaining === 0 ? '' : 'none';
+}
+
+function npRenumberItems() {
+  document.querySelectorAll('.np-item-card').forEach((card, idx) => {
+    const numEl = card.querySelector('.np-item-num');
+    if (numEl) numEl.textContent = idx + 1;
+  });
+}
+
+function npItemUpdateCampos(seq) {
+  const tipo = document.getElementById(`np-item-tipo-${seq}`)?.value;
+  if (!tipo) return;
+  const cfgCats = window.appConfig?.produtoCategorias || {};
+  const cats = cfgCats[tipo] ?? NP_CATEGORIAS[tipo] ?? [];
+  const catEl = document.getElementById(`np-item-categoria-${seq}`);
+  const catGrp = document.getElementById(`np-item-cat-grp-${seq}`);
+  if (catEl) {
+    catEl.innerHTML = cats.length ? cats.map(c => `<option value="${c}">${c}</option>`).join('') : '<option value="">— Não aplicável —</option>';
+    catEl.disabled = cats.length === 0;
+    if (catGrp) catGrp.style.display = cats.length ? '' : 'none';
+  }
+  const cfgMats = window.appConfig?.produtoMateriais || {};
+  const mats = cfgMats[tipo] ?? NP_MATERIAIS[tipo] ?? [];
+  const matEl = document.getElementById(`np-item-material-${seq}`);
+  if (matEl) {
+    matEl.innerHTML = mats.length ? mats.map(m => `<option value="${m}">${m}</option>`).join('') : '<option value="">— Não aplicável —</option>';
+    matEl.disabled = mats.length === 0;
+  }
+}
+
+function npGetItems() {
+  return Array.from(document.querySelectorAll('.np-item-card')).map(card => {
+    const seq = card.dataset.seq;
+    return {
+      tipo: document.getElementById(`np-item-tipo-${seq}`)?.value,
+      categoria: document.getElementById(`np-item-categoria-${seq}`)?.value || null,
+      material: document.getElementById(`np-item-material-${seq}`)?.value || null,
+      dimensoes: document.getElementById(`np-item-dimensoes-${seq}`)?.value || null,
+      cores: document.getElementById(`np-item-cores-${seq}`)?.value || null,
+      quantidade: parseInt(document.getElementById(`np-item-quantidade-${seq}`)?.value) || 1,
+      descricao: document.getElementById(`np-item-descricao-${seq}`)?.value || null,
+    };
+  }).filter(it => it.tipo);
+}
+
 async function modalNovoPedido() {
   let clientes = [];
   try { clientes = await api.clientes.listar(); } catch {}
-  _npClientes = clientes; // store for searchable dropdown
-
-  const coresList = window.appConfig?.cores?.length ? window.appConfig.cores : NP_CORES;
-  const coresCheckboxes = coresList.map(c =>
-    `<label class="checkbox-row" style="min-width:130px"><input type="checkbox" class="np-cor-check" value="${c}"> ${c}</label>`
-  ).join('');
+  _npClientes = clientes;
+  _npItemSeq = 0;
 
   const body = `
     <div class="form-grid">
-      <div class="form-group">
-        <label>Tipo de Produto *</label>
-        <select id="np-tipo" onchange="npAtualizarCampos()">
-          <option value="INF">Inflável</option>
-          <option value="LON">Lona</option>
-          <option value="ADH">Adesivo</option>
-          <option value="PLC">Placa</option>
-        </select>
-      </div>
-      <div class="form-group" id="np-categoria-group">
-        <label>Categoria</label>
-        <select id="np-categoria"></select>
-      </div>
-      <div class="form-group">
+      <div class="form-group span2">
         <label>Cliente</label>
         <div style="display:flex;gap:8px;align-items:center">
           <div class="searchable-select-wrap" style="flex:1">
@@ -734,71 +1087,27 @@ async function modalNovoPedido() {
       <div id="np-novo-cliente-form" style="display:none;grid-column:1/-1;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:4px">
         <div style="font-size:13px;font-weight:600;color:var(--accent);margin-bottom:12px">📋 Cadastrar Novo Cliente</div>
         <div class="form-grid">
-          <div class="form-group">
-            <label>Razão Social *</label>
-            <input type="text" id="nc-razao" placeholder="Razão social da empresa">
-          </div>
-          <div class="form-group">
-            <label>Nome Fantasia</label>
-            <input type="text" id="nc-fantasia" placeholder="Nome fantasia / apelido">
-          </div>
-          <div class="form-group">
-            <label>CNPJ / CPF</label>
-            <input type="text" id="nc-cnpj" placeholder="00.000.000/0001-00">
-          </div>
-          <div class="form-group">
-            <label>Inscrição Estadual (IE)</label>
-            <input type="text" id="nc-ie" placeholder="000.000.000.000">
-          </div>
-          <div class="form-group">
-            <label>Inscrição Municipal (IM)</label>
-            <input type="text" id="nc-im" placeholder="000000-0">
-          </div>
-          <div class="form-group">
-            <label>Telefone / WhatsApp</label>
-            <input type="text" id="nc-telefone" placeholder="(00) 00000-0000">
-          </div>
-          <div class="form-group">
-            <label>E-mail</label>
-            <input type="email" id="nc-email" placeholder="contato@empresa.com.br">
-          </div>
-          <div class="form-group">
-            <label>Cidade</label>
-            <input type="text" id="nc-cidade" placeholder="Cidade">
-          </div>
-          <div class="form-group">
-            <label>Estado (UF)</label>
-            <input type="text" id="nc-estado" placeholder="SP" maxlength="2">
-          </div>
-          <div class="form-group span2">
-            <label>Endereço Completo</label>
-            <input type="text" id="nc-endereco" placeholder="Rua, número, bairro, CEP">
-          </div>
-          <div class="form-group span2">
-            <label>Observações</label>
-            <textarea id="nc-obs" placeholder="Informações adicionais sobre o cliente..." style="height:60px"></textarea>
-          </div>
+          <div class="form-group"><label>Razão Social *</label><input type="text" id="nc-razao" placeholder="Razão social da empresa"></div>
+          <div class="form-group"><label>Nome Fantasia</label><input type="text" id="nc-fantasia"></div>
+          <div class="form-group"><label>CNPJ / CPF</label><input type="text" id="nc-cnpj" placeholder="00.000.000/0001-00"></div>
+          <div class="form-group"><label>IE</label><input type="text" id="nc-ie"></div>
+          <div class="form-group"><label>IM</label><input type="text" id="nc-im"></div>
+          <div class="form-group"><label>Telefone</label><input type="text" id="nc-telefone" placeholder="(00) 00000-0000"></div>
+          <div class="form-group"><label>E-mail</label><input type="email" id="nc-email"></div>
+          <div class="form-group"><label>Cidade</label><input type="text" id="nc-cidade"></div>
+          <div class="form-group"><label>Estado</label><input type="text" id="nc-estado" placeholder="SP" maxlength="2"></div>
+          <div class="form-group span2"><label>Endereço</label><input type="text" id="nc-endereco"></div>
+          <div class="form-group span2"><label>Observações</label><textarea id="nc-obs" style="height:60px"></textarea></div>
         </div>
         <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px">
           <button type="button" class="btn btn-ghost btn-sm" onclick="npToggleNovoCliente()">Cancelar</button>
           <button type="button" class="btn btn-primary btn-sm" onclick="npCriarCliente()">✓ Criar e Selecionar</button>
         </div>
       </div>
-      <div class="form-group">
-        <label>Material</label>
-        <select id="np-material"></select>
-      </div>
-      <div class="form-group span2">
-        <label>Cores (selecione quantas quiser)</label>
-        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px">${coresCheckboxes}</div>
-      </div>
+
       <div class="form-group span2">
         <label>Descrição do Pedido *</label>
-        <textarea id="np-descricao" placeholder="Descreva o produto, finalidade, informações relevantes..."></textarea>
-      </div>
-      <div class="form-group">
-        <label>Dimensões</label>
-        <input type="text" id="np-dimensoes" placeholder="ex: 3m x 2m">
+        <textarea id="np-descricao" placeholder="Finalidade, evento, observações gerais do pedido..."></textarea>
       </div>
       <div class="form-group">
         <label>Prazo de Entrega</label>
@@ -808,36 +1117,43 @@ async function modalNovoPedido() {
         <label>Valor do Orçamento (R$)</label>
         <input type="number" id="np-valor" placeholder="0,00" step="0.01">
       </div>
+
+      <!-- Itens -->
+      <div style="grid-column:1/-1;margin-top:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <label style="margin:0;font-size:13px;font-weight:600">Itens do Pedido *</label>
+          <button type="button" class="btn btn-primary btn-sm" onclick="npAddItem()">+ Adicionar Item</button>
+        </div>
+        <div id="np-itens-list"></div>
+        <div id="np-itens-empty" style="text-align:center;padding:20px;color:var(--text3);font-size:13px;border:2px dashed var(--border);border-radius:10px">
+          Clique em <strong>"+ Adicionar Item"</strong> para incluir os produtos deste pedido
+        </div>
+      </div>
     </div>
   `;
   const footer = `
     <button class="btn btn-ghost" onclick="fecharModalForce()">Cancelar</button>
     <button class="btn btn-primary" onclick="confirmarNovoPedido()">Criar Pedido</button>
   `;
-  abrirModal('Novo Pedido', body, footer);
-  // Inicializar dropdowns dependentes
-  setTimeout(npAtualizarCampos, 0);
+  abrirModal('Novo Pedido', body, footer, 'modal-lg');
 }
 
 async function confirmarNovoPedido() {
-  const tipo = document.getElementById('np-tipo').value;
-  const cats = NP_CATEGORIAS[tipo] || [];
-  const coresSelecionadas = [...document.querySelectorAll('.np-cor-check:checked')].map(el => el.value).join(', ');
+  const itens = npGetItems();
+  if (itens.length === 0) { toast('Adicione pelo menos um item ao pedido', 'error'); return; }
+  const descricao = document.getElementById('np-descricao').value.trim();
+  if (!descricao) { toast('Preencha a descrição do pedido', 'error'); return; }
+
   const dados = {
-    tipo,
-    categoria: cats.length ? document.getElementById('np-categoria')?.value : null,
     cliente_id: document.getElementById('np-cliente-id')?.value || null,
-    descricao: document.getElementById('np-descricao').value.trim(),
-    dimensoes: document.getElementById('np-dimensoes').value,
-    material: document.getElementById('np-material').value,
-    cores: coresSelecionadas,
+    descricao,
     prazo: document.getElementById('np-prazo').value,
     valor_orcamento: document.getElementById('np-valor').value || null,
+    itens,
   };
-  if (!dados.descricao) { toast('Preencha a descrição', 'error'); return; }
   try {
     const res = await api.pedidos.criar(dados);
-    toast(`Pedido ${res.codigo} criado!`, 'success');
+    toast(`Pedido ${res.codigo} criado com ${itens.length} item(s)!`, 'success');
     fecharModalForce();
     carregarPedidos();
   } catch (e) { toast(e.message, 'error'); }

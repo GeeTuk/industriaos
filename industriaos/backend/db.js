@@ -165,6 +165,31 @@ function initDb() {
       criado_em TEXT DEFAULT (datetime('now'))
     );
 
+    -- Itens individuais de um pedido (produção por item)
+    CREATE TABLE IF NOT EXISTS pedido_itens (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      pedido_id INTEGER NOT NULL REFERENCES pedidos(id) ON DELETE CASCADE,
+      ordem INTEGER DEFAULT 0,
+      tipo TEXT NOT NULL,
+      categoria TEXT,
+      descricao TEXT,
+      material TEXT,
+      cores TEXT,
+      dimensoes TEXT,
+      quantidade INTEGER DEFAULT 1,
+      etapa_atual INTEGER NOT NULL DEFAULT 4,
+      status TEXT NOT NULL DEFAULT 'pendente',
+      impressora TEXT,
+      precisa_solvente INTEGER DEFAULT 0,
+      precisa_uv INTEGER DEFAULT 0,
+      impressao_solvente_ok INTEGER DEFAULT 0,
+      impressao_uv_ok INTEGER DEFAULT 0,
+      corte_ok INTEGER DEFAULT 0,
+      impressao_ok INTEGER DEFAULT 0,
+      criado_em TEXT DEFAULT (datetime('now')),
+      atualizado_em TEXT DEFAULT (datetime('now'))
+    );
+
     -- Log de auditoria
     CREATE TABLE IF NOT EXISTS auditoria (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -284,6 +309,7 @@ function initDb() {
     'ALTER TABLE clientes ADD COLUMN im TEXT',
     'ALTER TABLE arquivos ADD COLUMN destino TEXT',
     'ALTER TABLE pedidos ADD COLUMN impressora TEXT',
+    'ALTER TABLE pedidos ADD COLUMN tem_itens INTEGER DEFAULT 0',
   ];
   for (const m of migrations) {
     try { db.exec(m); } catch (_) { /* coluna já existe */ }

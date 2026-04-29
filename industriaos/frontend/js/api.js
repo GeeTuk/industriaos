@@ -39,6 +39,11 @@ const api = {
     cancelar: (id, motivo) => apiFetch(`/pedidos/${id}/cancelar`, { method: 'POST', body: JSON.stringify({ motivo }) }),
     deletar: (id) => apiFetch(`/pedidos/${id}`, { method: 'DELETE' }),
     toggleUrgente: (id) => apiFetch(`/pedidos/${id}/urgente`, { method: 'POST' }),
+    // Itens individuais
+    adicionarItem: (pedidoId, d) => apiFetch(`/pedidos/${pedidoId}/itens`, { method: 'POST', body: JSON.stringify(d) }),
+    editarItem: (pedidoId, iid, d) => apiFetch(`/pedidos/${pedidoId}/itens/${iid}`, { method: 'PUT', body: JSON.stringify(d) }),
+    removerItem: (pedidoId, iid) => apiFetch(`/pedidos/${pedidoId}/itens/${iid}`, { method: 'DELETE' }),
+    avancarItem: (pedidoId, iid, data) => apiFetch(`/pedidos/${pedidoId}/itens/${iid}/avancar`, { method: 'POST', body: JSON.stringify(data) }),
   },
 
   suprimentos: {
