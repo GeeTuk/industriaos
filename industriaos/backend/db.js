@@ -209,17 +209,22 @@ function initDb() {
     );
   `);
 
-  // Usuário admin padrão
+  // Usuário admin padrão — usa OR IGNORE para nunca crashar em banco já populado
+  const insertUser = db.prepare(`
+    INSERT OR IGNORE INTO users (nome, email, senha_hash, perfil, setor, ativo)
+    VALUES (?, ?, ?, ?, ?, 1)
+  `);
+
   const adminExiste = db.prepare('SELECT id FROM users WHERE email = ?').get('admin@industriaos.com');
   if (!adminExiste) {
     const hash = bcrypt.hashSync('admin123', 10);
-    const insertUser = db.prepare(`
-      INSERT INTO users (nome, email, senha_hash, perfil, setor, ativo)
-      VALUES (?, ?, ?, ?, ?, 1)
-    `);
     insertUser.run('Administrador', 'admin@industriaos.com', hash, 'admin', 'Administração');
+    console.log('✅ Banco de dados inicializado com dados de exemplo.');
+    console.log('👤 Admin: admin@industriaos.com / admin123');
+  }
 
-    // Seed: alguns usuários de exemplo
+  // Seed: usuários de exemplo (OR IGNORE: pula se já existir)
+  {
     const usuarios = [
       { nome: 'Carlos Vendedor', email: 'vendedor@industriaos.com', perfil: 'vendedor', setor: 'Comercial' },
       { nome: 'Ana Designer', email: 'arte@industriaos.com', perfil: 'designer', setor: 'Arte' },
@@ -230,24 +235,21 @@ function initDb() {
       { nome: 'Lucas Expedição', email: 'expedicao@industriaos.com', perfil: 'expedicao', setor: 'Expedição' },
       { nome: 'Gerente Geral', email: 'gerente@industriaos.com', perfil: 'gerente_geral', setor: 'Gerência' },
     ];
-
     const senhaHash = bcrypt.hashSync('senha123', 10);
     for (const u of usuarios) {
       insertUser.run(u.nome, u.email, senhaHash, u.perfil, u.setor);
     }
+  }
 
-    // Seed: alguns clientes
+  // Seed: clientes de exemplo (OR IGNORE: pula se já existir)
+  {
     const insertCliente = db.prepare(`
-      INSERT INTO clientes (razao_social, nome_fantasia, cnpj_cpf, telefone, email, cidade, estado)
+      INSERT OR IGNORE INTO clientes (razao_social, nome_fantasia, cnpj_cpf, telefone, email, cidade, estado)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
     insertCliente.run('Eventos Brasil Ltda', 'Eventos Brasil', '12.345.678/0001-90', '(11) 99999-0001', 'contato@eventosbrasil.com.br', 'São Paulo', 'SP');
     insertCliente.run('Parques & Festas S/A', 'Parques & Festas', '98.765.432/0001-11', '(21) 98888-0002', 'compras@parquesfestas.com.br', 'Rio de Janeiro', 'RJ');
     insertCliente.run('Promo Ação Marketing', 'PromoAção', '45.678.901/0001-22', '(31) 97777-0003', 'pedidos@promoacao.com.br', 'Belo Horizonte', 'MG');
-
-    console.log('✅ Banco de dados inicializado com dados de exemplo.');
-    console.log('👤 Admin: admin@industriaos.com / admin123');
-    console.log('👤 Demais usuários: [email acima] / senha123');
   }
 
   // Seed: impressoras (se ainda não existirem)
