@@ -291,11 +291,13 @@ app.post('/api/pedidos/:id/avancar', authMiddleware, (req, res) => {
     return res.json({ mensagem: 'Pedido expedido e concluído!', status: 'concluido' });
   }
 
-  // ── ARTE (4): designer define impressora e tipo de impressão ──────
+  // ── ARTE (4): designer define impressora; solvente/UV auto-detectados pelo nome da máquina ──
   if (pedido.etapa_atual === 4) {
     if (!impressora) return res.status(400).json({ erro: 'Selecione a impressora antes de avançar.' });
+    const autoSolvente = /solvente/i.test(impressora) ? 1 : 0;
+    const autoUv      = /\buv\b/i.test(impressora) ? 1 : 0;
     db.prepare('UPDATE pedidos SET precisa_solvente = ?, precisa_uv = ?, impressora = ?, corte_ok = 0, impressao_ok = 0, impressao_solvente_ok = 0, impressao_uv_ok = 0 WHERE id = ?')
-      .run(precisa_solvente ? 1 : 0, precisa_uv ? 1 : 0, impressora, pedido.id);
+      .run(autoSolvente, autoUv, impressora, pedido.id);
     // Avança normalmente para etapa 5 abaixo
   }
 
@@ -388,9 +390,9 @@ app.put('/api/pedidos/:id', authMiddleware, (req, res) => {
   const pedido = db.prepare('SELECT * FROM pedidos WHERE id = ?').get(req.params.id);
   if (!pedido) return res.status(404).json({ erro: 'Pedido não encontrado' });
 
-  const { descricao, dimensoes, material, cores, prazo, valor_orcamento, precisa_solvente, precisa_uv, corte_paralelo, status } = req.body;
-  db.prepare(`UPDATE pedidos SET descricao=?, dimensoes=?, material=?, cores=?, prazo=?, valor_orcamento=?, precisa_solvente=?, precisa_uv=?, corte_paralelo=?, status=?, atualizado_em=CURRENT_TIMESTAMP WHERE id=?`).run(
-    descricao, dimensoes, material, cores, prazo, valor_orcamento,
+  const { cliente_id, descricao, dimensoes, material, cores, prazo, valor_orcamento, precisa_solvente, precisa_uv, corte_paralelo, status } = req.body;
+  db.prepare(`UPDATE pedidos SET cliente_id=?, descricao=?, dimensoes=?, material=?, cores=?, prazo=?, valor_orcamento=?, precisa_solvente=?, precisa_uv=?, corte_paralelo=?, status=?, atualizado_em=CURRENT_TIMESTAMP WHERE id=?`).run(
+    cliente_id || pedido.cliente_id, descricao, dimensoes, material, cores, prazo, valor_orcamento,
     precisa_solvente ? 1 : 0, precisa_uv ? 1 : 0, corte_paralelo ? 1 : 0,
     status || 'ativo', req.params.id
   );
@@ -538,13 +540,15 @@ app.post('/api/pedidos/:id/itens/:iid/avancar', authMiddleware, (req, res) => {
 
   const nomeItem = `${item.tipo}${item.categoria ? ' / ' + item.categoria : ''}${item.dimensoes ? ' (' + item.dimensoes + ')' : ''}`;
 
-  // ── ETAPA 4: Arte → Impressão/Corte ───────────────────────────────
+  // ── ETAPA 4: Arte → Impressão/Corte; solvente/UV auto-detectados pelo nome da máquina ──
   if (item.etapa_atual === 4) {
     if (!impressora) return res.status(400).json({ erro: 'Selecione a impressora antes de avançar' });
+    const autoSolvente = /solvente/i.test(impressora) ? 1 : 0;
+    const autoUv      = /\buv\b/i.test(impressora) ? 1 : 0;
     db.prepare(`UPDATE pedido_itens SET impressora=?, precisa_solvente=?, precisa_uv=?,
       corte_ok=0, impressao_ok=0, impressao_solvente_ok=0, impressao_uv_ok=0,
       etapa_atual=5, atualizado_em=CURRENT_TIMESTAMP WHERE id=?`)
-      .run(impressora, precisa_solvente ? 1 : 0, precisa_uv ? 1 : 0, item.id);
+      .run(impressora, autoSolvente, autoUv, item.id);
     db.prepare('INSERT INTO historico (pedido_id, user_id, tipo, etapa_de, etapa_para, descricao) VALUES (?, ?, ?, ?, ?, ?)').run(
       pedido.id, req.user.id, 'avanco', 4, 5,
       `Item "${nomeItem}" — Arte concluída por ${req.user.nome} (Impressora: ${impressora})${observacao ? ' — ' + observacao : ''}`
@@ -714,6 +718,7 @@ app.get('/api/dashboard', authMiddleware, (req, res) => {
             OR (COALESCE(p.tem_itens,0) = 1 AND p.etapa_atual = 4 AND EXISTS (
               SELECT 1 FROM pedido_itens pi WHERE pi.pedido_id = p.id AND pi.etapa_atual IN (${inCl}) AND pi.status != 'concluido'
             ))
+            OR (COALESCE(p.tem_itens,0) = 1 AND p.etapa_atual NOT IN (4,5,6,7) AND p.etapa_atual IN (${inCl}))
           )`
         : `p.etapa_atual IN (${inCl})`;
 

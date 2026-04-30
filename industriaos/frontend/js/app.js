@@ -233,13 +233,22 @@ function tagStatus(status) {
 
 function formatDate(d) {
   if (!d) return '—';
-  const dt = new Date(d);
+  // SQLite datetime('now') devolve UTC sem 'Z'; adicionamos 'Z' para o JS interpretar como UTC
+  // e converter automaticamente para o fuso horário local (Brasília UTC-3)
+  const s = (d.includes('T') || d.endsWith('Z')) ? d : d.replace(' ', 'T') + 'Z';
+  const dt = new Date(s);
   return dt.toLocaleDateString('pt-BR') + ' ' + dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 }
 
 function formatDateShort(d) {
   if (!d) return '—';
-  return new Date(d).toLocaleDateString('pt-BR');
+  // Datas de prazo (YYYY-MM-DD) não têm hora — parsear sem 'Z' para evitar off-by-one de fuso
+  const s = d.length <= 10 ? d + 'T12:00:00' : ((d.includes('T') || d.endsWith('Z')) ? d : d.replace(' ', 'T') + 'Z');
+  return new Date(s).toLocaleDateString('pt-BR');
+}
+
+function escHtml(str) {
+  return (str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
 function formatMoney(v) {

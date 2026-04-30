@@ -203,7 +203,7 @@ async function abrirFichaPedido(id) {
         }
       }
     }
-    if (isAdmin) {
+    if (isAdmin && pedido.etapa_atual <= 4) {
       acoes += `<button class="btn btn-ghost btn-sm" onclick="modalEditarPedido(${pedido.id})">✎ Editar</button>`;
     }
     // Cancelar (admin/gerente sempre; vendedor até etapa 3)
@@ -365,7 +365,8 @@ async function abrirFichaPedido(id) {
 
           let itemAcoes = '';
           if (item.status !== 'concluido' && pedido.status === 'ativo') {
-            const canOperarItem = currentUser.etapasOperar?.includes(item.etapa_atual) || isAdmin;
+            // Itens só são operáveis após o pedido ser aprovado (etapa >= 4)
+            const canOperarItem = pedido.etapa_atual >= 4 && (currentUser.etapasOperar?.includes(item.etapa_atual) || isAdmin);
             if (canOperarItem) {
               if (item.etapa_atual === 5) {
                 const isCorte = ['corte','admin','gerente_geral'].includes(currentUser.perfil);
@@ -505,13 +506,6 @@ function modalAvancar(id, etapaAtual, temItens = false) {
         ${(window.appConfig?.impressoras || [{nome:'Mimaki UV (100-160)'},{nome:'Mimaki Solvente (150-160)'}])
           .map(i => `<option value="${i.nome}">🖨️ ${i.nome}</option>`).join('')}
       </select>
-    </div>
-    <div class="form-group">
-      <label>Tratamento de impressão necessário</label>
-      <div style="display:flex;gap:20px;margin-top:8px">
-        <label class="checkbox-row"><input type="checkbox" id="imp-solvente"> Solvente</label>
-        <label class="checkbox-row"><input type="checkbox" id="imp-uv"> UV</label>
-      </div>
     </div>` : ''}
     ${isExpedicao ? `
     <div class="form-group">
@@ -543,8 +537,6 @@ async function confirmarAvancar(id, etapaAtual, temItens = false) {
     const impressora = document.getElementById('imp-impressora')?.value;
     if (!impressora) { toast('Selecione a impressora antes de avançar.', 'error'); return; }
     dados.impressora = impressora;
-    dados.precisa_solvente = document.getElementById('imp-solvente')?.checked;
-    dados.precisa_uv = document.getElementById('imp-uv')?.checked;
   }
   if (etapaAtual === 8) {
     dados.transportadora = document.getElementById('exp-transportadora')?.value;
@@ -729,13 +721,6 @@ function modalAvancarItem(pedidoId, itemId, etapaAtual, tipoItem) {
         ${(window.appConfig?.impressoras || [{nome:'Mimaki UV (100-160)'},{nome:'Mimaki Solvente (150-160)'}])
           .map(i => `<option value="${i.nome}">🖨️ ${i.nome}</option>`).join('')}
       </select>
-    </div>
-    <div class="form-group">
-      <label>Tratamento de impressão</label>
-      <div style="display:flex;gap:20px;margin-top:8px">
-        <label class="checkbox-row"><input type="checkbox" id="ai-solvente"> Solvente</label>
-        <label class="checkbox-row"><input type="checkbox" id="ai-uv"> UV</label>
-      </div>
     </div>` : ''}
     <div class="form-group">
       <label>Observação (opcional)</label>
@@ -757,8 +742,6 @@ async function confirmarAvancarItem(pedidoId, itemId, etapaAtual) {
     const impressora = document.getElementById('ai-impressora')?.value;
     if (!impressora) { toast('Selecione a impressora antes de avançar.', 'error'); return; }
     dados.impressora = impressora;
-    dados.precisa_solvente = document.getElementById('ai-solvente')?.checked;
-    dados.precisa_uv = document.getElementById('ai-uv')?.checked;
   }
   try {
     const res = await api.pedidos.avancarItem(pedidoId, itemId, dados);
@@ -1243,73 +1226,196 @@ async function confirmarNovoPedido() {
   } catch (e) { toast(e.message, 'error'); }
 }
 
-// ── EDITAR PEDIDO ─────────────────────────────────────────────────
+// ── EDITAR PEDIDO (com itens) ─────────────────────────────────────
+let _epItemMap = {}; // seq → itemId (para pedidos com itens)
+
 async function modalEditarPedido(id) {
-  const pedido = await api.pedidos.get(id);
+  _epItemMap = {};
+  let pedido, clientes;
+  try {
+    [pedido, clientes] = await Promise.all([api.pedidos.get(id), api.clientes.listar()]);
+    _npClientes = clientes;
+  } catch (e) { toast(e.message, 'error'); return; }
+
+  const temItens = !!(pedido.tem_itens && pedido.itens?.length > 0);
+
+  // Pré-gera os cards de item (mesma estrutura do novo pedido)
+  let itensHtml = '';
+  if (temItens) {
+    _npItemSeq = 0;
+    pedido.itens.forEach(item => {
+      _npItemSeq++;
+      _epItemMap[_npItemSeq] = item.id;
+      itensHtml += npItemCard(_npItemSeq);
+    });
+  }
+
   const body = `
     <div class="form-grid">
       <div class="form-group span2">
+        <label>Cliente</label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <div class="searchable-select-wrap" style="flex:1">
+            <input type="text" id="np-cliente-search" value="${escHtml(pedido.cliente_nome || '')}"
+              autocomplete="off"
+              oninput="npFiltrarClientes()"
+              onfocus="npFiltrarClientes()"
+              onblur="setTimeout(npFecharDropdownCliente, 150)">
+            <input type="hidden" id="np-cliente-id" value="${pedido.cliente_id || ''}">
+            <div class="searchable-opts" id="np-cliente-opts" style="display:none"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-group span2">
         <label>Descrição *</label>
-        <textarea id="ep-descricao">${pedido.descricao || ''}</textarea>
-      </div>
-      <div class="form-group">
-        <label>Dimensões</label>
-        <input type="text" id="ep-dimensoes" value="${pedido.dimensoes || ''}">
-      </div>
-      <div class="form-group">
-        <label>Material</label>
-        <input type="text" id="ep-material" value="${pedido.material || ''}">
-      </div>
-      <div class="form-group">
-        <label>Cores</label>
-        <input type="text" id="ep-cores" value="${pedido.cores || ''}">
+        <textarea id="np-descricao">${escHtml(pedido.descricao || '')}</textarea>
       </div>
       <div class="form-group">
         <label>Prazo</label>
-        <input type="date" id="ep-prazo" value="${pedido.prazo || ''}">
+        <input type="date" id="np-prazo" value="${pedido.prazo || ''}">
       </div>
       <div class="form-group">
-        <label>Valor Orçamento</label>
-        <input type="number" id="ep-valor" value="${pedido.valor_orcamento || ''}" step="0.01">
+        <label>Valor Orçamento (R$)</label>
+        <input type="number" id="np-valor" value="${pedido.valor_orcamento || ''}" step="0.01">
       </div>
       <div class="form-group">
         <label>Status</label>
         <select id="ep-status">
           <option value="ativo" ${pedido.status==='ativo'?'selected':''}>Ativo</option>
           <option value="aguardando" ${pedido.status==='aguardando'?'selected':''}>Aguardando</option>
-          <option value="concluido" ${pedido.status==='concluido'?'selected':''}>Concluído</option>
           <option value="cancelado" ${pedido.status==='cancelado'?'selected':''}>Cancelado</option>
         </select>
       </div>
-      <div class="form-group" style="padding-top:20px">
-        <label class="checkbox-row"><input type="checkbox" id="ep-solvente" ${pedido.precisa_solvente?'checked':''}> Impressão Solvente</label>
-        <label class="checkbox-row" style="margin-top:8px"><input type="checkbox" id="ep-uv" ${pedido.precisa_uv?'checked':''}> Impressão UV</label>
+
+      ${temItens ? `
+      <div style="grid-column:1/-1;margin-top:8px">
+        <div style="font-size:13px;font-weight:600;margin-bottom:10px;color:var(--text1)">
+          📋 Itens do Pedido
+          <span style="font-size:11px;font-weight:400;color:var(--text3);margin-left:8px">(edite os campos necessários)</span>
+        </div>
+        <div id="np-itens-list">${itensHtml}</div>
       </div>
+      ` : `
+      <div class="form-group">
+        <label>Dimensões</label>
+        <input type="text" id="ep-dimensoes" value="${escHtml(pedido.dimensoes || '')}">
+      </div>
+      <div class="form-group">
+        <label>Material</label>
+        <input type="text" id="ep-material" value="${escHtml(pedido.material || '')}">
+      </div>
+      <div class="form-group">
+        <label>Cores</label>
+        <input type="text" id="ep-cores" value="${escHtml(pedido.cores || '')}">
+      </div>
+      `}
     </div>
   `;
+
   const footer = `
     <button class="btn btn-ghost" onclick="fecharModalForce()">Cancelar</button>
-    <button class="btn btn-primary" onclick="confirmarEditarPedido(${id})">Salvar</button>
+    <button class="btn btn-primary" onclick="confirmarEditarPedido(${id}, ${temItens})">💾 Salvar Alterações</button>
   `;
-  abrirModal(`Editar — ${pedido.codigo}`, body, footer);
+  abrirModal(`Editar — ${pedido.codigo}`, body, footer, 'modal-lg');
+
+  // Pré-popular itens após o render
+  if (temItens) {
+    npRenumberItems();
+    setTimeout(() => {
+      pedido.itens.forEach((item, idx) => {
+        const seq = idx + 1;
+
+        // 1. Tipo (dispara atualização de cats/mats)
+        const tipoEl = document.getElementById(`np-item-tipo-${seq}`);
+        if (tipoEl) { tipoEl.value = item.tipo; npItemUpdateCampos(seq); }
+
+        // 2. Categoria e Material (após cats/mats carregadas)
+        const catEl = document.getElementById(`np-item-categoria-${seq}`);
+        if (catEl && item.categoria) catEl.value = item.categoria;
+        const matEl = document.getElementById(`np-item-material-${seq}`);
+        if (matEl && item.material) matEl.value = item.material;
+
+        // 3. Quantidade e Descrição
+        const qtdEl = document.getElementById(`np-item-quantidade-${seq}`);
+        if (qtdEl) qtdEl.value = item.quantidade || 1;
+        const descEl = document.getElementById(`np-item-descricao-${seq}`);
+        if (descEl) descEl.value = item.descricao || '';
+
+        // 4. Dimensões
+        const dimSel    = document.getElementById(`np-item-dim-${seq}`);
+        const dimCustom = document.getElementById(`np-item-dim-custom-${seq}`);
+        if (dimSel && dimCustom) {
+          if (getDimensoesList().includes(item.dimensoes)) {
+            dimSel.value = item.dimensoes || '';
+          } else if (item.dimensoes) {
+            dimSel.value = '__outro__';
+            dimCustom.style.display = '';
+            dimCustom.value = item.dimensoes;
+          }
+        }
+
+        // 5. Cores (chips)
+        const itemCores = (item.cores || '').split(',').map(c => c.trim()).filter(Boolean);
+        const chips = document.getElementById(`np-item-cores-chips-${seq}`);
+        if (chips && itemCores.length > 0) {
+          chips.querySelectorAll('label').forEach(label => {
+            const cb = label.querySelector('input[type="checkbox"]');
+            if (cb && itemCores.includes(cb.value)) {
+              cb.checked = true;
+              label.style.background  = 'var(--accent)';
+              label.style.color       = '#fff';
+              label.style.borderColor = 'var(--accent)';
+            }
+          });
+        }
+      });
+    }, 50);
+  }
 }
 
-async function confirmarEditarPedido(id) {
-  const dados = {
-    descricao: document.getElementById('ep-descricao').value,
-    dimensoes: document.getElementById('ep-dimensoes').value,
-    material: document.getElementById('ep-material').value,
-    cores: document.getElementById('ep-cores').value,
-    prazo: document.getElementById('ep-prazo').value,
-    valor_orcamento: document.getElementById('ep-valor').value || null,
-    status: document.getElementById('ep-status').value,
-    precisa_solvente: document.getElementById('ep-solvente').checked,
-    precisa_uv: document.getElementById('ep-uv').checked,
+async function confirmarEditarPedido(id, temItens = false) {
+  const descricao = document.getElementById('np-descricao')?.value?.trim();
+  if (!descricao) { toast('Preencha a descrição do pedido', 'error'); return; }
+
+  const pedidoDados = {
+    cliente_id:      document.getElementById('np-cliente-id')?.value || null,
+    descricao,
+    prazo:           document.getElementById('np-prazo')?.value || null,
+    valor_orcamento: document.getElementById('np-valor')?.value || null,
+    status:          document.getElementById('ep-status')?.value || 'ativo',
+    // Campos legados (pedido sem itens)
+    dimensoes: document.getElementById('ep-dimensoes')?.value || null,
+    material:  document.getElementById('ep-material')?.value || null,
+    cores:     document.getElementById('ep-cores')?.value || null,
   };
+
   try {
-    await api.pedidos.atualizar(id, dados);
-    toast('Pedido atualizado', 'success');
+    await api.pedidos.atualizar(id, pedidoDados);
+
+    // Salvar itens se existirem
+    if (temItens) {
+      const cards = document.querySelectorAll('.np-item-card');
+      for (const card of cards) {
+        const seq    = parseInt(card.dataset.seq);
+        const itemId = _epItemMap[seq];
+        if (!itemId) continue;
+        const dados = {
+          tipo:       document.getElementById(`np-item-tipo-${seq}`)?.value,
+          categoria:  document.getElementById(`np-item-categoria-${seq}`)?.value || null,
+          material:   document.getElementById(`np-item-material-${seq}`)?.value || null,
+          dimensoes:  npGetItemDimensoes(seq),
+          cores:      npGetItemCores(seq),
+          quantidade: parseInt(document.getElementById(`np-item-quantidade-${seq}`)?.value) || 1,
+          descricao:  document.getElementById(`np-item-descricao-${seq}`)?.value || null,
+        };
+        await api.pedidos.editarItem(id, itemId, dados);
+      }
+    }
+
+    toast('Pedido atualizado!', 'success');
     fecharModalForce();
     carregarPedidos();
+    setTimeout(() => abrirFichaPedido(id), 300);
   } catch (e) { toast(e.message, 'error'); }
 }
