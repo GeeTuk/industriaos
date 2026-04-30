@@ -82,6 +82,11 @@ const api = {
       criar: (nome) => apiFetch('/admin/produto-cores', { method: 'POST', body: JSON.stringify({ nome }) }),
       apagar: (id) => apiFetch(`/admin/produto-cores/${id}`, { method: 'DELETE' }),
     },
+    produtoDimensoes: {
+      listar: () => apiFetch('/admin/produto-dimensoes'),
+      criar: (nome) => apiFetch('/admin/produto-dimensoes', { method: 'POST', body: JSON.stringify({ nome }) }),
+      apagar: (id) => apiFetch(`/admin/produto-dimensoes/${id}`, { method: 'DELETE' }),
+    },
   },
 
   usuarios: {

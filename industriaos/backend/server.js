@@ -789,7 +789,10 @@ app.get('/api/config', authMiddleware, (req, res) => {
   const coresRows = db.prepare('SELECT nome FROM produto_cores WHERE ativo = 1 ORDER BY nome').all();
   const cores = coresRows.map(r => r.nome);
 
-  res.json({ impressoras, supCategorias, produtoCategorias, produtoMateriais, cores });
+  const dimsRows = db.prepare('SELECT nome FROM produto_dimensoes WHERE ativo = 1 ORDER BY nome').all();
+  const dimensoes = dimsRows.map(r => r.nome);
+
+  res.json({ impressoras, supCategorias, produtoCategorias, produtoMateriais, cores, dimensoes });
 });
 
 // ── ADMIN: CONFIGURAÇÕES ───────────────────────────────────────────
@@ -865,6 +868,21 @@ app.post('/api/admin/produto-cores', authMiddleware, requireAdmin, (req, res) =>
 });
 app.delete('/api/admin/produto-cores/:id', authMiddleware, requireAdmin, (req, res) => {
   db.prepare('UPDATE produto_cores SET ativo = 0 WHERE id = ?').run(req.params.id);
+  res.json({ ok: true });
+});
+
+// Dimensões
+app.get('/api/admin/produto-dimensoes', authMiddleware, requireAdmin, (req, res) => {
+  res.json(db.prepare('SELECT * FROM produto_dimensoes WHERE ativo = 1 ORDER BY nome').all());
+});
+app.post('/api/admin/produto-dimensoes', authMiddleware, requireAdmin, (req, res) => {
+  const { nome } = req.body;
+  if (!nome?.trim()) return res.status(400).json({ erro: 'Nome obrigatório' });
+  const r = db.prepare('INSERT INTO produto_dimensoes (nome) VALUES (?)').run(nome.trim());
+  res.json({ id: r.lastInsertRowid, nome: nome.trim(), ativo: 1 });
+});
+app.delete('/api/admin/produto-dimensoes/:id', authMiddleware, requireAdmin, (req, res) => {
+  db.prepare('UPDATE produto_dimensoes SET ativo = 0 WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
 });
 

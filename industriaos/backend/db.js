@@ -165,6 +165,14 @@ function initDb() {
       criado_em TEXT DEFAULT (datetime('now'))
     );
 
+    -- Dimensões padrão de produto
+    CREATE TABLE IF NOT EXISTS produto_dimensoes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      nome TEXT NOT NULL,
+      ativo INTEGER DEFAULT 1,
+      criado_em TEXT DEFAULT (datetime('now'))
+    );
+
     -- Itens individuais de um pedido (produção por item)
     CREATE TABLE IF NOT EXISTS pedido_itens (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -294,6 +302,18 @@ function initDb() {
   if (!db.prepare('SELECT id FROM produto_cores LIMIT 1').get()) {
     for (const nome of ['Vermelho','Azul Omni','Azul 388C','Verde Maçã','Branco','Verde Bandeira','Laranja']) {
       db.prepare('INSERT INTO produto_cores (nome) VALUES (?)').run(nome);
+    }
+  }
+
+  // Seed: dimensões padrão
+  if (!db.prepare('SELECT id FROM produto_dimensoes LIMIT 1').get()) {
+    const dims = [
+      '1m × 1m','1m × 2m','1m × 3m','2m × 2m','2m × 3m','2m × 4m',
+      '3m × 3m','3m × 4m','3m × 5m','4m × 4m','4m × 5m','4m × 6m',
+      '5m × 5m','5m × 6m','5m × 8m','6m × 6m','6m × 8m','8m × 8m',
+    ];
+    for (const nome of dims) {
+      db.prepare('INSERT INTO produto_dimensoes (nome) VALUES (?)').run(nome);
     }
   }
 

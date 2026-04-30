@@ -11,6 +11,7 @@ async function renderConfiguracoes() {
     { id: 'produto-categorias',label: '🗂️ Categorias' },
     { id: 'produto-materiais', label: '🧵 Materiais' },
     { id: 'produto-cores',     label: '🎨 Cores' },
+    { id: 'produto-dimensoes', label: '📐 Dimensões' },
   ];
 
   document.getElementById('content').innerHTML = `
@@ -41,11 +42,12 @@ async function _cfgRenderTab() {
   el.innerHTML = '<div style="padding:32px;text-align:center;color:var(--text3)">Carregando...</div>';
 
   try {
-    if (_cfgTab === 'impressoras')          await _cfgRenderImpressoras(el);
-    else if (_cfgTab === 'sup-categorias')  await _cfgRenderSupCategorias(el);
+    if (_cfgTab === 'impressoras')            await _cfgRenderImpressoras(el);
+    else if (_cfgTab === 'sup-categorias')   await _cfgRenderSupCategorias(el);
     else if (_cfgTab === 'produto-materiais') await _cfgRenderProdutoMateriais(el);
-    else if (_cfgTab === 'produto-cores')   await _cfgRenderProdutoCores(el);
-    else                                    await _cfgRenderProdutoCategorias(el);
+    else if (_cfgTab === 'produto-cores')    await _cfgRenderProdutoCores(el);
+    else if (_cfgTab === 'produto-dimensoes') await _cfgRenderProdutoDimensoes(el);
+    else                                     await _cfgRenderProdutoCategorias(el);
   } catch (e) {
     el.innerHTML = `<div class="empty-state"><div class="empty-text">Erro: ${e.message}</div></div>`;
   }
@@ -380,6 +382,58 @@ async function _cfgApagarCor(id, nome) {
     await api.admin.produtoCores.apagar(id);
     window.appConfig = await api.config();
     toast('Cor removida', 'success');
+    _cfgRenderTab();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+// ── ABA: DIMENSÕES ────────────────────────────────────────────────
+async function _cfgRenderProdutoDimensoes(el) {
+  const lista = await api.admin.produtoDimensoes.listar();
+
+  el.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">📐 Dimensões Padrão</div>
+        <div style="font-size:12px;color:var(--text3)">Tamanhos que aparecem como opções no formulário de itens</div>
+      </div>
+      <div style="padding:16px 20px">
+        <div style="display:flex;gap:8px;margin-bottom:20px">
+          <input type="text" id="cfg-nova-dim" placeholder="ex: 3.5m × 2m, 10m × 5m..."
+            style="flex:1" onkeydown="if(event.key==='Enter')_cfgAdicionarDim()">
+          <button class="btn btn-primary" onclick="_cfgAdicionarDim()">＋ Adicionar</button>
+        </div>
+        <div id="cfg-dims-lista" style="display:flex;flex-wrap:wrap;gap:8px">
+          ${lista.length ? lista.map(d => `
+            <div style="display:flex;align-items:center;gap:6px;background:var(--bg2);border:1px solid var(--border);border-radius:20px;padding:6px 12px 6px 14px">
+              <span style="font-size:13px;color:var(--text1);font-family:var(--font-mono)">📐 ${d.nome}</span>
+              <button onclick="_cfgApagarDim(${d.id}, '${d.nome.replace(/'/g,"\\'")}')"
+                style="background:none;border:none;cursor:pointer;color:var(--red);font-size:14px;padding:0 2px;line-height:1"
+                title="Remover">✕</button>
+            </div>`).join('')
+          : '<div style="color:var(--text3);font-size:13px;padding:8px 0">Nenhuma dimensão cadastrada</div>'}
+        </div>
+      </div>
+    </div>`;
+}
+
+async function _cfgAdicionarDim() {
+  const nome = document.getElementById('cfg-nova-dim')?.value?.trim();
+  if (!nome) { toast('Digite a dimensão', 'error'); return; }
+  try {
+    await api.admin.produtoDimensoes.criar(nome);
+    window.appConfig = await api.config();
+    toast('Dimensão adicionada!', 'success');
+    document.getElementById('cfg-nova-dim').value = '';
+    _cfgRenderTab();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function _cfgApagarDim(id, nome) {
+  if (!confirm(`Apagar a dimensão "${nome}"?`)) return;
+  try {
+    await api.admin.produtoDimensoes.apagar(id);
+    window.appConfig = await api.config();
+    toast('Dimensão removida', 'success');
     _cfgRenderTab();
   } catch (e) { toast(e.message, 'error'); }
 }

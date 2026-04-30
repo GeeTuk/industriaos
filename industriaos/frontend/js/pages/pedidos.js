@@ -803,15 +803,22 @@ function modalAdicionarItem(pedidoId) {
       </div>
       <div class="form-group">
         <label>Dimensões</label>
-        <input type="text" id="mai-dimensoes" placeholder="ex: 3m x 2m">
-      </div>
-      <div class="form-group">
-        <label>Cores</label>
-        <input type="text" id="mai-cores" placeholder="ex: Vermelho, Azul Omni">
+        <select id="mai-dim" onchange="maiDimChange()" style="width:100%">
+          <option value="">— Selecione —</option>
+          ${getDimensoesList().map(d => `<option value="${d}">${d}</option>`).join('')}
+          <option value="__outro__">Outro (digitar)</option>
+        </select>
+        <input type="text" id="mai-dim-custom" placeholder="ex: 2.5m × 1.8m" style="margin-top:6px;display:none">
       </div>
       <div class="form-group">
         <label>Quantidade</label>
         <input type="number" id="mai-quantidade" value="1" min="1">
+      </div>
+      <div class="form-group span2">
+        <label>Cores</label>
+        <div id="mai-cores-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">
+          ${getCoresList().map(c => `<label style="cursor:pointer;display:inline-flex;align-items:center;gap:4px;background:var(--bg3);border:1px solid var(--border);border-radius:20px;padding:4px 10px;font-size:12px;user-select:none;transition:all .15s" onclick="npItemCorToggle(this)"><input type="checkbox" value="${c}" style="display:none"><span>${c}</span></label>`).join('')}
+        </div>
       </div>
       <div class="form-group span2">
         <label>Descrição do item</label>
@@ -855,8 +862,8 @@ async function confirmarAdicionarItem(pedidoId) {
     tipo,
     categoria: document.getElementById('mai-categoria')?.value || null,
     material: document.getElementById('mai-material')?.value || null,
-    dimensoes: document.getElementById('mai-dimensoes')?.value || null,
-    cores: document.getElementById('mai-cores')?.value || null,
+    dimensoes: maiGetDimensoes(),
+    cores: maiGetCores(),
     quantidade: parseInt(document.getElementById('mai-quantidade')?.value) || 1,
     descricao: document.getElementById('mai-descricao')?.value || null,
   };
@@ -890,6 +897,76 @@ const NP_MATERIAIS = {
   PLC: ['2mm', '1mm'],
 };
 const NP_CORES = ['Vermelho', 'Azul Omni', 'Azul 388C', 'Verde Maçã', 'Branco', 'Verde Bandeira', 'Laranja'];
+const NP_DIMENSOES = [
+  '1m × 1m','1m × 2m','1m × 3m','2m × 2m','2m × 3m','2m × 4m',
+  '3m × 3m','3m × 4m','3m × 5m','4m × 4m','4m × 5m','4m × 6m',
+  '5m × 5m','5m × 6m','5m × 8m','6m × 6m','6m × 8m','8m × 8m',
+];
+
+function getCoresList() {
+  return (window.appConfig?.cores?.length) ? window.appConfig.cores : NP_CORES;
+}
+function getDimensoesList() {
+  return (window.appConfig?.dimensoes?.length) ? window.appConfig.dimensoes : NP_DIMENSOES;
+}
+
+// Chips de cor: toggle visual
+function npItemCorToggle(label) {
+  const cb = label.querySelector('input[type="checkbox"]');
+  if (!cb) return;
+  cb.checked = !cb.checked;
+  label.style.background    = cb.checked ? 'var(--accent)' : 'var(--bg3)';
+  label.style.color         = cb.checked ? '#fff' : '';
+  label.style.borderColor   = cb.checked ? 'var(--accent)' : 'var(--border)';
+}
+
+// Lê chips selecionadas de um container de seq
+function npGetItemCores(seq) {
+  const container = document.getElementById(`np-item-cores-chips-${seq}`);
+  if (!container) return null;
+  const checked = Array.from(container.querySelectorAll('input[type="checkbox"]:checked')).map(cb => cb.value);
+  return checked.length > 0 ? checked.join(', ') : null;
+}
+
+// Lê dimensões do select ou input customizado (seq)
+function npGetItemDimensoes(seq) {
+  const sel = document.getElementById(`np-item-dim-${seq}`);
+  if (!sel) return null;
+  if (sel.value === '__outro__' || sel.value === '') {
+    return document.getElementById(`np-item-dim-custom-${seq}`)?.value?.trim() || null;
+  }
+  return sel.value || null;
+}
+function npItemDimChange(seq) {
+  const sel    = document.getElementById(`np-item-dim-${seq}`);
+  const custom = document.getElementById(`np-item-dim-custom-${seq}`);
+  if (!sel || !custom) return;
+  custom.style.display = sel.value === '__outro__' ? '' : 'none';
+  if (sel.value !== '__outro__') custom.value = '';
+}
+
+// Helpers para modalAdicionarItem
+function maiGetCores() {
+  const container = document.getElementById('mai-cores-chips');
+  if (!container) return null;
+  const checked = Array.from(container.querySelectorAll('input[type="checkbox"]:checked')).map(cb => cb.value);
+  return checked.length > 0 ? checked.join(', ') : null;
+}
+function maiGetDimensoes() {
+  const sel = document.getElementById('mai-dim');
+  if (!sel) return null;
+  if (sel.value === '__outro__' || sel.value === '') {
+    return document.getElementById('mai-dim-custom')?.value?.trim() || null;
+  }
+  return sel.value || null;
+}
+function maiDimChange() {
+  const sel    = document.getElementById('mai-dim');
+  const custom = document.getElementById('mai-dim-custom');
+  if (!sel || !custom) return;
+  custom.style.display = sel.value === '__outro__' ? '' : 'none';
+  if (sel.value !== '__outro__') custom.value = '';
+}
 
 function npAtualizarCampos() {
   const tipo = document.getElementById('np-tipo')?.value;
@@ -975,15 +1052,22 @@ function npItemCard(seq) {
         </div>
         <div class="form-group">
           <label style="font-size:11px">Dimensões</label>
-          <input type="text" id="np-item-dimensoes-${seq}" placeholder="ex: 3m × 2m">
-        </div>
-        <div class="form-group">
-          <label style="font-size:11px">Cores</label>
-          <input type="text" id="np-item-cores-${seq}" placeholder="ex: Vermelho, Azul Omni">
+          <select id="np-item-dim-${seq}" onchange="npItemDimChange(${seq})" style="width:100%">
+            <option value="">— Selecione —</option>
+            ${getDimensoesList().map(d => `<option value="${d}">${d}</option>`).join('')}
+            <option value="__outro__">Outro (digitar)</option>
+          </select>
+          <input type="text" id="np-item-dim-custom-${seq}" placeholder="ex: 2.5m × 1.8m" style="margin-top:6px;display:none">
         </div>
         <div class="form-group">
           <label style="font-size:11px">Quantidade</label>
           <input type="number" id="np-item-quantidade-${seq}" value="1" min="1" style="width:80px">
+        </div>
+        <div class="form-group span2">
+          <label style="font-size:11px">Cores</label>
+          <div id="np-item-cores-chips-${seq}" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">
+            ${getCoresList().map(c => `<label style="cursor:pointer;display:inline-flex;align-items:center;gap:4px;background:var(--bg3);border:1px solid var(--border);border-radius:20px;padding:4px 10px;font-size:12px;user-select:none;transition:all .15s" onclick="npItemCorToggle(this)"><input type="checkbox" value="${c}" style="display:none"><span>${c}</span></label>`).join('')}
+          </div>
         </div>
         <div class="form-group span2">
           <label style="font-size:11px">Descrição do item <span style="color:var(--text3);font-weight:400">(opcional)</span></label>
@@ -1051,8 +1135,8 @@ function npGetItems() {
       tipo: document.getElementById(`np-item-tipo-${seq}`)?.value,
       categoria: document.getElementById(`np-item-categoria-${seq}`)?.value || null,
       material: document.getElementById(`np-item-material-${seq}`)?.value || null,
-      dimensoes: document.getElementById(`np-item-dimensoes-${seq}`)?.value || null,
-      cores: document.getElementById(`np-item-cores-${seq}`)?.value || null,
+      dimensoes: npGetItemDimensoes(seq),
+      cores: npGetItemCores(seq),
       quantidade: parseInt(document.getElementById(`np-item-quantidade-${seq}`)?.value) || 1,
       descricao: document.getElementById(`np-item-descricao-${seq}`)?.value || null,
     };
