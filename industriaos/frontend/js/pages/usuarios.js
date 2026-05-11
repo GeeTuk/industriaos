@@ -37,6 +37,7 @@ async function carregarUsuarios() {
             <div>
               <div style="font-weight:600">${u.nome}</div>
               <div style="font-size:11px;color:var(--text3)">${u.email}</div>
+              ${u.nickname ? `<div style="font-size:10px;color:var(--accent);font-family:var(--font-mono)">@${escHtml(u.nickname)}</div>` : ''}
             </div>
           </div>
         </td>
@@ -75,6 +76,7 @@ function modalNovoUsuario() {
     <div class="form-grid">
       <div class="form-group"><label>Nome Completo *</label><input type="text" id="nu-nome"></div>
       <div class="form-group"><label>E-mail *</label><input type="email" id="nu-email"></div>
+      <div class="form-group"><label>Usuário (nickname)</label><input type="text" id="nu-nickname" placeholder="ex: joao.silva (para login rápido)"></div>
       <div class="form-group"><label>Senha *</label><input type="password" id="nu-senha" placeholder="mínimo 6 caracteres"></div>
       <div class="form-group"><label>Perfil *</label><select id="nu-perfil">${perfilOpts}</select></div>
       <div class="form-group"><label>Setor</label><input type="text" id="nu-setor" placeholder="ex: Impressão, Arte..."></div>
@@ -94,6 +96,7 @@ async function confirmarNovoUsuario() {
   const dados = {
     nome: document.getElementById('nu-nome').value.trim(),
     email: document.getElementById('nu-email').value.trim(),
+    nickname: document.getElementById('nu-nickname').value.trim() || null,
     senha: document.getElementById('nu-senha').value,
     perfil: document.getElementById('nu-perfil').value,
     setor: document.getElementById('nu-setor').value,
@@ -116,11 +119,12 @@ async function modalEditarUsuario(id) {
   const perfilOpts = PERFIS_LISTA.map(p => `<option value="${p.value}" ${u.perfil===p.value?'selected':''}>${p.label}</option>`).join('');
   const body = `
     <div class="form-grid">
-      <div class="form-group"><label>Nome Completo *</label><input type="text" id="eu-nome" value="${u.nome}"></div>
-      <div class="form-group"><label>E-mail *</label><input type="email" id="eu-email" value="${u.email}"></div>
+      <div class="form-group"><label>Nome Completo *</label><input type="text" id="eu-nome" value="${escHtml(u.nome)}"></div>
+      <div class="form-group"><label>E-mail *</label><input type="email" id="eu-email" value="${escHtml(u.email)}"></div>
+      <div class="form-group"><label>Usuário (nickname)</label><input type="text" id="eu-nickname" value="${escHtml(u.nickname || '')}" placeholder="ex: joao.silva"></div>
       <div class="form-group"><label>Nova Senha (deixe em branco para não alterar)</label><input type="password" id="eu-senha" placeholder="•••••••"></div>
       <div class="form-group"><label>Perfil *</label><select id="eu-perfil">${perfilOpts}</select></div>
-      <div class="form-group"><label>Setor</label><input type="text" id="eu-setor" value="${u.setor || ''}"></div>
+      <div class="form-group"><label>Setor</label><input type="text" id="eu-setor" value="${escHtml(u.setor || '')}"></div>
       <div class="form-group">
         <label>Status</label>
         <select id="eu-ativo">
@@ -141,6 +145,7 @@ async function confirmarEditarUsuario(id) {
   const dados = {
     nome: document.getElementById('eu-nome').value.trim(),
     email: document.getElementById('eu-email').value.trim(),
+    nickname: document.getElementById('eu-nickname').value.trim() || null,
     perfil: document.getElementById('eu-perfil').value,
     setor: document.getElementById('eu-setor').value,
     ativo: document.getElementById('eu-ativo').value === '1',

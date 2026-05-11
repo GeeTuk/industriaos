@@ -321,6 +321,7 @@ function initDb() {
 
   // Migrações: adicionar colunas que podem não existir em instâncias antigas
   const migrations = [
+    'ALTER TABLE users ADD COLUMN nickname TEXT',
     'ALTER TABLE pedidos ADD COLUMN corte_ok INTEGER DEFAULT 0',
     'ALTER TABLE pedidos ADD COLUMN impressao_ok INTEGER DEFAULT 0',
     'ALTER TABLE pedidos ADD COLUMN categoria TEXT',

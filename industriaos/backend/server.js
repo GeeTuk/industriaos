@@ -26,9 +26,47 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage, limits: { fileSize: 50 * 1024 * 1024 } });
 
+// ── SEGURANÇA ─────────────────────────────────────────────────────
+// Headers de segurança HTTP
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  next();
+});
+
+// CORS: permite apenas a origem configurada (ou localhost para dev)
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || 'https://sistema.magicshape.com.br,http://localhost:3000').split(',').map(s => s.trim());
+app.use(cors({
+  origin: (origin, cb) => {
+    if (!origin || ALLOWED_ORIGINS.includes(origin)) cb(null, true);
+    else cb(new Error('Origem não permitida pelo CORS'));
+  },
+  credentials: true,
+}));
+
+// Rate limiting simples no login (sem pacote extra)
+const _loginAttempts = new Map(); // ip → { count, reset }
+function _checkLoginRate(ip) {
+  const now = Date.now();
+  let entry = _loginAttempts.get(ip);
+  if (!entry || now > entry.reset) {
+    _loginAttempts.set(ip, { count: 1, reset: now + 15 * 60 * 1000 });
+    return true;
+  }
+  if (entry.count >= 15) return false; // máx 15 tentativas em 15 min
+  entry.count++;
+  return true;
+}
+// Limpa entradas antigas a cada hora
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, e] of _loginAttempts) if (now > e.reset) _loginAttempts.delete(ip);
+}, 60 * 60 * 1000);
+
 // Middleware
-app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '2mb' }));
 app.use(express.static(path.join(__dirname, '..', 'frontend')));
 
 // 8 etapas: Corte e Impressão ocorrem em PARALELO na etapa 5
@@ -45,19 +83,25 @@ const ETAPAS = {
 
 // ── AUTH ──────────────────────────────────────────────────────────
 app.post('/api/auth/login', (req, res) => {
-  const { email, senha } = req.body;
-  if (!email || !senha) return res.status(400).json({ erro: 'E-mail e senha obrigatórios' });
+  const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress || 'unknown';
+  if (!_checkLoginRate(ip)) return res.status(429).json({ erro: 'Muitas tentativas. Aguarde 15 minutos.' });
 
-  const user = db.prepare('SELECT * FROM users WHERE email = ? AND ativo = 1').get(email.toLowerCase().trim());
+  const { login, email, senha } = req.body; // aceita 'login' (novo) ou 'email' (retrocompat)
+  const identificador = (login || email || '').trim();
+  if (!identificador || !senha) return res.status(400).json({ erro: 'Usuário/e-mail e senha obrigatórios' });
+
+  // Busca por e-mail OU nickname (case-insensitive)
+  const user = db.prepare(
+    'SELECT * FROM users WHERE (LOWER(email) = LOWER(?) OR LOWER(nickname) = LOWER(?)) AND ativo = 1'
+  ).get(identificador, identificador);
+
   if (!user) return res.status(401).json({ erro: 'Usuário não encontrado ou inativo' });
-
   if (!bcrypt.compareSync(senha, user.senha_hash)) return res.status(401).json({ erro: 'Senha incorreta' });
 
   db.prepare('UPDATE users SET ultimo_acesso = CURRENT_TIMESTAMP WHERE id = ?').run(user.id);
-  db.prepare('INSERT INTO auditoria (user_id, acao, detalhes) VALUES (?, ?, ?)').run(user.id, 'login', `Login: ${email}`);
+  db.prepare('INSERT INTO auditoria (user_id, acao, detalhes, ip) VALUES (?, ?, ?, ?)').run(user.id, 'login', `Login: ${identificador}`, ip);
 
   const token = jwt.sign({ id: user.id, nome: user.nome, email: user.email, perfil: user.perfil, setor: user.setor }, JWT_SECRET, { expiresIn: '12h' });
-
   res.json({ token, user: { id: user.id, nome: user.nome, email: user.email, perfil: user.perfil, setor: user.setor } });
 });
 
@@ -971,27 +1015,36 @@ app.get('/api/relatorios', authMiddleware, (req, res) => {
 
 // ── USUÁRIOS (admin) ──────────────────────────────────────────────
 app.get('/api/usuarios', authMiddleware, requireAdmin, (req, res) => {
-  const usuarios = db.prepare('SELECT id, nome, email, perfil, setor, ativo, criado_em, ultimo_acesso FROM users ORDER BY nome').all();
+  const usuarios = db.prepare('SELECT id, nome, email, nickname, perfil, setor, ativo, criado_em, ultimo_acesso FROM users ORDER BY nome').all();
   res.json(usuarios);
 });
 
 app.post('/api/usuarios', authMiddleware, requireAdmin, (req, res) => {
-  const { nome, email, senha, perfil, setor } = req.body;
+  const { nome, email, senha, perfil, setor, nickname } = req.body;
   if (!nome || !email || !senha) return res.status(400).json({ erro: 'Nome, e-mail e senha obrigatórios' });
-  const existe = db.prepare('SELECT id FROM users WHERE email = ?').get(email.toLowerCase());
+  const existe = db.prepare('SELECT id FROM users WHERE LOWER(email) = LOWER(?)').get(email);
   if (existe) return res.status(400).json({ erro: 'E-mail já cadastrado' });
+  if (nickname) {
+    const nickExiste = db.prepare('SELECT id FROM users WHERE LOWER(nickname) = LOWER(?)').get(nickname);
+    if (nickExiste) return res.status(400).json({ erro: 'Nickname já está em uso' });
+  }
   const hash = bcrypt.hashSync(senha, 10);
-  const r = db.prepare('INSERT INTO users (nome, email, senha_hash, perfil, setor) VALUES (?, ?, ?, ?, ?)').run(nome, email.toLowerCase(), hash, perfil || 'operador', setor);
+  const r = db.prepare('INSERT INTO users (nome, email, senha_hash, perfil, setor, nickname) VALUES (?, ?, ?, ?, ?, ?)').run(nome, email.toLowerCase(), hash, perfil || 'operador', setor, nickname || null);
   res.json({ id: r.lastInsertRowid, mensagem: 'Usuário criado' });
 });
 
 app.put('/api/usuarios/:id', authMiddleware, requireAdmin, (req, res) => {
-  const { nome, email, perfil, setor, ativo, senha } = req.body;
+  const { nome, email, perfil, setor, ativo, senha, nickname } = req.body;
+  // Verifica unicidade de nickname (excluindo o próprio usuário)
+  if (nickname) {
+    const nickExiste = db.prepare('SELECT id FROM users WHERE LOWER(nickname) = LOWER(?) AND id != ?').get(nickname, req.params.id);
+    if (nickExiste) return res.status(400).json({ erro: 'Nickname já está em uso' });
+  }
   if (senha) {
     const hash = bcrypt.hashSync(senha, 10);
-    db.prepare('UPDATE users SET nome=?, email=?, perfil=?, setor=?, ativo=?, senha_hash=? WHERE id=?').run(nome, email, perfil, setor, ativo ? 1 : 0, hash, req.params.id);
+    db.prepare('UPDATE users SET nome=?, email=?, perfil=?, setor=?, ativo=?, senha_hash=?, nickname=? WHERE id=?').run(nome, email, perfil, setor, ativo ? 1 : 0, hash, nickname || null, req.params.id);
   } else {
-    db.prepare('UPDATE users SET nome=?, email=?, perfil=?, setor=?, ativo=? WHERE id=?').run(nome, email, perfil, setor, ativo ? 1 : 0, req.params.id);
+    db.prepare('UPDATE users SET nome=?, email=?, perfil=?, setor=?, ativo=?, nickname=? WHERE id=?').run(nome, email, perfil, setor, ativo ? 1 : 0, nickname || null, req.params.id);
   }
   res.json({ mensagem: 'Usuário atualizado' });
 });

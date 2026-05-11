@@ -14,7 +14,7 @@ async function apiFetch(path, opts = {}) {
 }
 
 const api = {
-  login: (email, senha) => apiFetch('/auth/login', { method: 'POST', body: JSON.stringify({ email, senha }) }),
+  login: (login, senha) => apiFetch('/auth/login', { method: 'POST', body: JSON.stringify({ login, senha }) }),
   me: () => apiFetch('/auth/me'),
   etapas: () => apiFetch('/etapas'),
 

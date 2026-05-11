@@ -78,7 +78,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 
 // ── AUTH ──────────────────────────────────────────────────────────
 async function fazerLogin() {
-  const email = document.getElementById('login-email').value.trim();
+  const login = document.getElementById('login-email').value.trim();
   const senha = document.getElementById('login-senha').value;
   const btn = document.getElementById('login-btn');
   const erro = document.getElementById('login-erro');
@@ -86,7 +86,7 @@ async function fazerLogin() {
   btn.disabled = true;
   btn.textContent = 'Entrando...';
   try {
-    const res = await api.login(email, senha);
+    const res = await api.login(login, senha);
     setToken(res.token);
     currentUser = await api.me();
     etapasMap = await api.etapas();
