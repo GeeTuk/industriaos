@@ -3,6 +3,43 @@ let currentUser = null;
 let currentPage = null;
 let etapasMap = {};
 
+// ── AUTO-REFRESH (polling a cada 25s) ─────────────────────────────
+let _autoRefreshTimer = null;
+let _fichaAbertaId    = null; // ID do pedido com ficha aberta no modal
+
+function _startAutoRefresh() {
+  _stopAutoRefresh();
+  _autoRefreshTimer = setInterval(_autoRefreshTick, 25000);
+}
+
+function _stopAutoRefresh() {
+  if (_autoRefreshTimer) { clearInterval(_autoRefreshTimer); _autoRefreshTimer = null; }
+}
+
+async function _autoRefreshTick() {
+  try {
+    // Lista de pedidos visível → atualiza silenciosamente
+    if (document.getElementById('pedidos-lista') && typeof carregarPedidos === 'function') {
+      await carregarPedidos();
+    }
+    // Ficha de pedido aberta → recarrega o conteúdo do modal
+    if (_fichaAbertaId) {
+      const overlay = document.getElementById('modal-overlay');
+      if (overlay?.classList.contains('open') && typeof abrirFichaPedido === 'function') {
+        await abrirFichaPedido(_fichaAbertaId);
+      }
+    }
+    // Dashboard visível → atualiza
+    if (currentPage === 'dashboard' && typeof renderDashboard === 'function') {
+      await renderDashboard();
+    }
+    // Fila visível → atualiza
+    if (currentPage === 'fila' && typeof renderFila === 'function') {
+      await renderFila();
+    }
+  } catch (_) { /* ignora erros silenciosos de refresh */ }
+}
+
 // 8 etapas: Impressão e Corte são paralelas na etapa 5
 const ETAPAS_NOMES = {
   1: 'Contato', 2: 'Layout', 3: 'Aprovação', 4: 'Arte',
@@ -25,6 +62,7 @@ window.addEventListener('DOMContentLoaded', async () => {
       window.appConfig = await api.config().catch(() => ({ impressoras: [], supCategorias: {}, produtoCategorias: {} }));
       mostrarApp();
       navigate('dashboard');
+      _startAutoRefresh();
     } catch {
       removeToken();
       mostrarLogin();
@@ -55,6 +93,7 @@ async function fazerLogin() {
     window.appConfig = await api.config().catch(() => ({ impressoras: [], supCategorias: {}, produtoCategorias: {} }));
     mostrarApp();
     navigate('dashboard');
+    _startAutoRefresh();
   } catch (e) {
     erro.textContent = e.message;
     erro.style.display = 'block';
@@ -65,6 +104,8 @@ async function fazerLogin() {
 }
 
 function logout() {
+  _stopAutoRefresh();
+  _fichaAbertaId = null;
   removeToken();
   currentUser = null;
   document.getElementById('app-shell').style.display = 'none';
@@ -180,6 +221,7 @@ function fecharModal(e) {
 
 function fecharModalForce() {
   document.getElementById('modal-overlay').classList.remove('open');
+  _fichaAbertaId = null;
 }
 
 // ── LIGHTBOX ──────────────────────────────────────────────────────

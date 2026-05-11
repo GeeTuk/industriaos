@@ -114,6 +114,7 @@ function renderTabelaPedidos(pedidos) {
 
 // ── FICHA DO PEDIDO ───────────────────────────────────────────────
 async function abrirFichaPedido(id) {
+  _fichaAbertaId = id; // registra para o auto-refresh saber qual pedido atualizar
   try {
     const pedido = await api.pedidos.get(id);
     const canOperar = currentUser.etapasOperar?.includes(pedido.etapa_atual) || ['admin','gerente_geral'].includes(currentUser.perfil);
